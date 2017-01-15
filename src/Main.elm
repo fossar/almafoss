@@ -94,9 +94,11 @@ init { host } location =
         currentRoute =
             Routing.parseLocation location
 
-        lang = defaultLanguage
+        lang =
+            defaultLanguage
 
-        (sourceListModel, sourceListCmds) = SourceList.init host lang Nothing
+        ( sourceListModel, sourceListCmds ) =
+            SourceList.init host lang Nothing
 
         initialModel =
             { host = host
@@ -231,13 +233,6 @@ update action model =
               }
             , Cmd.none
             )
-
-        --SourceDataFetched data ->
-        --    ( { model
-        --        | loading = False
-        --      }
-        --    , Cmd.none
-        --    )
 
         TagsFetched tags ->
             ( { model | tags = tags }, Cmd.none )
@@ -715,7 +710,7 @@ update action model =
                     if newTitle == model.title then
                         []
                     else
-                        [setTitle newTitle]
+                        [ setTitle newTitle ]
 
                 cmds =
                     Cmd.batch (updateTitle ++ extraCmds (Just model) newModel)
@@ -1148,6 +1143,7 @@ mainContent model =
 
             Routing.SourceList ->
                 Html.map SourceList (SourceList.sourceList model.sourceList)
+
             Routing.NotFoundRoute ->
                 text <| translate model.lang Messages.NotFound
 

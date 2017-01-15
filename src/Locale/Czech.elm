@@ -15,6 +15,7 @@ pl n one few many =
     t (Pluralization.czech n one few many)
 
 
+{-| -}
 translator : Translator Message
 translator str =
     case str of

@@ -15,6 +15,7 @@ pl n one more =
     t (Pluralization.english n one more)
 
 
+{-| -}
 translator : Translator Message
 translator str =
     case str of

@@ -178,6 +178,8 @@ update action model =
             ( model, Cmd.none )
 
 
+{-| Component listing sources and allowing their management.
+-}
 sourceList : Model -> Html Msg
 sourceList model =
     if List.isEmpty model.data then

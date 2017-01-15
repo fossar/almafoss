@@ -2,7 +2,10 @@ version=$(shell jq -r '.version' elm-package.json)
 
 all: build
 
-build:
+dependencies:
+	elm-github-install
+
+build: dependencies
 	elm-make src/Main.elm --output=assets/main.js
 
 optimize: build
@@ -20,6 +23,6 @@ package: optimize
 	tar czf "almafoss-${version}.tar.gz" -C "${build_dir}" "almafoss-${version}"
 	rm -rf "${build_dir}"
 
-watch:
+watch: dependencies
 	elm-live src/Main.elm --output=assets/main.js --pushstate --open --debug
 

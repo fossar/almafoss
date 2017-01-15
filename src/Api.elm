@@ -14,9 +14,10 @@ import Json.Decode as Json exposing (field)
 import Json.Decode.Pipeline exposing (custom, decode, hardcoded, required, optional)
 import Time.DateTime exposing (DateTime, fromTimestamp)
 import Types exposing (..)
-import Utils
 
 
+{-| Request items.
+-}
 items : { model | credentials : Maybe Credentials, host : String } -> Filter -> (Result Http.Error (List Item) -> msg) -> Cmd msg
 items { credentials, host } filter handler =
     HttpBuilder.get (host ++ "/items")
@@ -25,6 +26,8 @@ items { credentials, host } filter handler =
         |> send handler
 
 
+{-| Request sources to be used in the sidebar.
+-}
 sources : { model | credentials : Maybe Credentials, host : String } -> (Result Http.Error (List Source) -> msg) -> Cmd msg
 sources { credentials, host } handler =
     HttpBuilder.get (host ++ "/sources/stats")
@@ -33,6 +36,8 @@ sources { credentials, host } handler =
         |> send handler
 
 
+{-| Request sources to be used on the source management page.
+-}
 sourceData : { model | credentials : Maybe Credentials, host : String } -> (Result Http.Error (List SourceData) -> msg) -> Cmd msg
 sourceData { credentials, host } handler =
     HttpBuilder.get (host ++ "/sources/list")
@@ -41,6 +46,8 @@ sourceData { credentials, host } handler =
         |> send handler
 
 
+{-| Request tags.
+-}
 tags : { model | credentials : Maybe Credentials, host : String } -> (Result Http.Error (List Tag) -> msg) -> Cmd msg
 tags { credentials, host } handler =
     HttpBuilder.get (host ++ "/tags")
@@ -49,6 +56,8 @@ tags { credentials, host } handler =
         |> send handler
 
 
+{-| Request numbers of all, unread and starred items.
+-}
 stats : { model | credentials : Maybe Credentials, host : String } -> (Result Http.Error Stats -> msg) -> Cmd msg
 stats { credentials, host } handler =
     HttpBuilder.get (host ++ "/stats")
@@ -57,6 +66,8 @@ stats { credentials, host } handler =
         |> send handler
 
 
+{-| Request item to be marked as read.
+-}
 markItemRead : { model | credentials : Maybe Credentials, host : String } -> Item -> (Result Http.Error Bool -> msg) -> Cmd msg
 markItemRead { credentials, host } item handler =
     HttpBuilder.post (host ++ "/mark/" ++ toString item.id)
@@ -65,6 +76,8 @@ markItemRead { credentials, host } item handler =
         |> send handler
 
 
+{-| Request item to be marked as unread.
+-}
 markItemUnread : { model | credentials : Maybe Credentials, host : String } -> Item -> (Result Http.Error Bool -> msg) -> Cmd msg
 markItemUnread { credentials, host } item handler =
     HttpBuilder.post (host ++ "/unmark/" ++ toString item.id)
@@ -73,6 +86,8 @@ markItemUnread { credentials, host } item handler =
         |> send handler
 
 
+{-| Request item to be starred.
+-}
 starItem : { model | credentials : Maybe Credentials, host : String } -> Item -> (Result Http.Error Bool -> msg) -> Cmd msg
 starItem { credentials, host } item handler =
     HttpBuilder.post (host ++ "/starr/" ++ toString item.id)
@@ -81,6 +96,8 @@ starItem { credentials, host } item handler =
         |> send handler
 
 
+{-| Request item to be unstarred.
+-}
 unstarItem : { model | credentials : Maybe Credentials, host : String } -> Item -> (Result Http.Error Bool -> msg) -> Cmd msg
 unstarItem { credentials, host } item handler =
     HttpBuilder.post (host ++ "/unstarr/" ++ toString item.id)
@@ -89,6 +106,8 @@ unstarItem { credentials, host } item handler =
         |> send handler
 
 
+{-| Request authentication.
+-}
 login : { model | host : String } -> Credentials -> (Result Http.Error Bool -> msg) -> Cmd msg
 login { host } credentials handler =
     HttpBuilder.get (host ++ "/login")

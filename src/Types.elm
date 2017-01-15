@@ -6,6 +6,7 @@ module Types exposing (..)
 import Dict exposing (Dict)
 import Time.DateTime exposing (DateTime)
 
+
 {-| User name
 -}
 type alias UserName =

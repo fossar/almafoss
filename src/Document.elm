@@ -8,6 +8,7 @@ module Document exposing (title)
 import Task exposing (Task)
 import Native.Document
 
+
 {-| Set title of the document.
 
 This is roughly the same as assigning to [`document.title`][docs].
