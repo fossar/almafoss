@@ -287,7 +287,7 @@ update action model =
                 cmds =
                     Cmd.batch
                         [ Navigation.newUrl <| Routing.link Routing.SourceList
-                          -- , fetchSources model
+                        , fetchSources model
                         ]
             in
                 ( newModel, cmds )

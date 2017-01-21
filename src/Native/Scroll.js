@@ -1,4 +1,4 @@
-var _jtojnar$almafoss$Native_Scroll = function() {
+var _fossar$almafoss$Native_Scroll = function() {
 
 var fakeNode = {
 	getElementById: function() { return null; },

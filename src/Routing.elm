@@ -1,4 +1,9 @@
-module Routing exposing (Route(..), link, parseLocation)
+module Routing exposing (Route(..), parseLocation, link)
+
+{-| This module defines the type representing route and provides functions for converting the location to route and vice versa.
+
+@docs Route, parseLocation, link
+-}
 
 import Navigation exposing (Location)
 import Http
@@ -6,11 +11,24 @@ import Types exposing (..)
 import UrlParser exposing (..)
 
 
+{-| -}
 type Route
     = ItemList { activeItem : Maybe Int, filter : Filter }
     | SourceList
     | AuthError
     | NotFoundRoute
+
+
+{-| Convert URL fragment to route.
+-}
+parseLocation : Location -> Route
+parseLocation location =
+    case (UrlParser.parseHash matchers location) of
+        Just route ->
+            route
+
+        Nothing ->
+            NotFoundRoute
 
 
 matchers : UrlParser.Parser (Route -> a) a
@@ -47,6 +65,8 @@ primaryFilter =
         )
 
 
+{-| Convert route to URL fragment.
+-}
 link : Route -> String
 link route =
     case route of
@@ -92,13 +112,3 @@ link route =
 
         NotFoundRoute ->
             "#404"
-
-
-parseLocation : Location -> Route
-parseLocation location =
-    case (UrlParser.parseHash matchers location) of
-        Just route ->
-            route
-
-        Nothing ->
-            NotFoundRoute

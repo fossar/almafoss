@@ -1,4 +1,4 @@
-var _jtojnar$almafoss$Native_Window = function() {
+var _fossar$almafoss$Native_Window = function() {
 
 	function open(url) {
 		return _elm_lang$core$Native_Scheduler.nativeBinding(function(callback) {

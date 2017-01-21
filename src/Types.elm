@@ -1,6 +1,29 @@
-module Types exposing (..)
+module Types
+    exposing
+        ( UserName
+        , Password
+        , Credentials
+        , FilterPrimary(..)
+        , FilterSecondary(..)
+        , Filter
+        , defaultFilter
+        , Item
+        , Tag
+        , Source
+        , SourceData
+        , Stats
+        )
 
 {-| Common types and aliases.
+
+## Authentication
+@docs UserName, Password, Credentials
+
+## Filters
+@docs FilterPrimary, FilterSecondary, Filter, defaultFilter
+
+## Feed data
+@docs Item, Tag, Source, SourceData, Stats
 -}
 
 import Dict exposing (Dict)
@@ -27,24 +50,36 @@ type alias Credentials =
     }
 
 
+{-| -}
 type FilterPrimary
     = AllItems
     | UnreadItems
     | StarredItems
 
 
+{-| -}
 type FilterSecondary
     = AllTags
     | OnlySource Int
     | OnlyTag String
 
 
+{-| -}
 type alias Filter =
     { primary : FilterPrimary
     , secondary : FilterSecondary
     }
 
 
+{-| -}
+defaultFilter : Filter
+defaultFilter =
+    { primary = AllItems
+    , secondary = AllTags
+    }
+
+
+{-| -}
 type alias Item =
     { id : Int
     , title : String
@@ -60,6 +95,7 @@ type alias Item =
     }
 
 
+{-| -}
 type alias Tag =
     { tag : String
     , color : String
@@ -67,6 +103,7 @@ type alias Tag =
     }
 
 
+{-| -}
 type alias Source =
     { id : Int
     , title : String
@@ -74,6 +111,7 @@ type alias Source =
     }
 
 
+{-| -}
 type alias SourceData =
     { id : Int
     , title : String
@@ -86,15 +124,9 @@ type alias SourceData =
     }
 
 
+{-| -}
 type alias Stats =
     { total : Int
     , unread : Int
     , starred : Int
-    }
-
-
-defaultFilter : Filter
-defaultFilter =
-    { primary = AllItems
-    , secondary = AllTags
     }

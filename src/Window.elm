@@ -1,4 +1,4 @@
-module Window exposing (Error(..), open)
+module Window exposing (open)
 
 {-| This module provides a method for opening a windows.
 

@@ -1,17 +1,19 @@
-module Api exposing (items, sources, sourceData, tags, stats, markItemRead, markItemUnread, starItem, unstarItem, login)
+module Api exposing (items, sources, tags, stats, markItemRead, markItemUnread, starItem, unstarItem, sourceData, addSource, updateSource, deleteSource, login)
 
 {-| Module handling communication with Selfoss using [REST API][rest-docs].
 
-@docs items, sources, sourceData, tags, stats, markItemRead, markItemUnread, starItem, unstarItem, login
+@docs items, sources, tags, stats, markItemRead, markItemUnread, starItem, unstarItem, sourceData, addSource, updateSource, deleteSource, login
 
 [rest-docs]: https://github.com/SSilence/selfoss/wiki/Restful-API-for-Apps-or-any-other-external-access
 -}
 
+import Dict
 import Http
 import HttpBuilder exposing (..)
 import Json.Decode as Json
 import Json.Decode as Json exposing (field)
 import Json.Decode.Pipeline exposing (custom, decode, hardcoded, required, optional)
+import Json.Encode
 import Time.DateTime exposing (DateTime, fromTimestamp)
 import Types exposing (..)
 
@@ -33,16 +35,6 @@ sources { credentials, host } handler =
     HttpBuilder.get (host ++ "/sources/stats")
         |> withQueryParams (makeAuth credentials)
         |> withExpect (Http.expectJson sourcesDecoder)
-        |> send handler
-
-
-{-| Request sources to be used on the source management page.
--}
-sourceData : { model | credentials : Maybe Credentials, host : String } -> (Result Http.Error (List SourceData) -> msg) -> Cmd msg
-sourceData { credentials, host } handler =
-    HttpBuilder.get (host ++ "/sources/list")
-        |> withQueryParams (makeAuth credentials)
-        |> withExpect (Http.expectJson sourceDataDecoder)
         |> send handler
 
 
@@ -101,6 +93,48 @@ starItem { credentials, host } item handler =
 unstarItem : { model | credentials : Maybe Credentials, host : String } -> Item -> (Result Http.Error Bool -> msg) -> Cmd msg
 unstarItem { credentials, host } item handler =
     HttpBuilder.post (host ++ "/unstarr/" ++ toString item.id)
+        |> withQueryParams (makeAuth credentials)
+        |> withExpect (Http.expectJson successDecoder)
+        |> send handler
+
+
+{-| Request sources to be used on the source management page.
+-}
+sourceData : { model | credentials : Maybe Credentials, host : String } -> (Result Http.Error (List SourceData) -> msg) -> Cmd msg
+sourceData { credentials, host } handler =
+    HttpBuilder.get (host ++ "/sources/list")
+        |> withQueryParams (makeAuth credentials)
+        |> withExpect (Http.expectJson sourceDataDecoder)
+        |> send handler
+
+
+{-| Request source creation.
+-}
+addSource : { model | credentials : Maybe Credentials, host : String } -> SourceData -> (Result Http.Error Int -> msg) -> Cmd msg
+addSource { credentials, host } data handler =
+    HttpBuilder.post (host ++ "/source")
+        |> withQueryParams (makeAuth credentials)
+        |> withJsonBody (sourceDataEncoder data)
+        |> withExpect (Http.expectJson affectedIdDecoder)
+        |> send handler
+
+
+{-| Request source update.
+-}
+updateSource : { model | credentials : Maybe Credentials, host : String } -> SourceData -> (Result Http.Error Int -> msg) -> Cmd msg
+updateSource { credentials, host } data handler =
+    HttpBuilder.post (host ++ "/source/" ++ toString data.id)
+        |> withQueryParams (makeAuth credentials)
+        |> withJsonBody (sourceDataEncoder data)
+        |> withExpect (Http.expectJson affectedIdDecoder)
+        |> send handler
+
+
+{-| Request source deletion.
+-}
+deleteSource : { model | credentials : Maybe Credentials, host : String } -> Int -> (Result Http.Error Bool -> msg) -> Cmd msg
+deleteSource { credentials, host } id handler =
+    HttpBuilder.delete (host ++ "/source/" ++ toString id)
         |> withQueryParams (makeAuth credentials)
         |> withExpect (Http.expectJson successDecoder)
         |> send handler
@@ -191,6 +225,16 @@ sourceDataDecoder =
         Json.list sourceDecoder
 
 
+sourceDataEncoder : SourceData -> Json.Encode.Value
+sourceDataEncoder data =
+    Json.Encode.object
+        [ ( "title", Json.Encode.string data.title )
+        , ( "tags", tagsEncoder data.tags )
+        , ( "spout", Json.Encode.string data.spout )
+        , ( "params", Json.Encode.object (Dict.toList (Dict.map (\_ val -> Maybe.withDefault Json.Encode.null (Maybe.map Json.Encode.string val)) data.params)) )
+        ]
+
+
 tagsDecoder : Json.Decoder (List Tag)
 tagsDecoder =
     let
@@ -201,6 +245,11 @@ tagsDecoder =
                 (field "unread" intString)
     in
         Json.list tagDecoder
+
+
+tagsEncoder : List String -> Json.Encode.Value
+tagsEncoder tags =
+    Json.Encode.string (String.join "," tags)
 
 
 statsDecoder : Json.Decoder Stats
@@ -255,6 +304,22 @@ For certain requests, Selfoss responds with either `{"success": true}` or `{"suc
 successDecoder : Json.Decoder Bool
 successDecoder =
     Json.field "success" Json.bool
+
+
+{-| Parse the basic response.
+
+For certain requests, Selfoss responds with either `{"success": true}` or `{"success": false}`.
+-}
+affectedIdDecoder : Json.Decoder Int
+affectedIdDecoder =
+    Json.field "success" Json.bool
+        |> Json.andThen
+            (\success ->
+                if success then
+                    Json.field "id" intString
+                else
+                    Json.fail "No source affected"
+            )
 
 
 {-| Ignore empty string.

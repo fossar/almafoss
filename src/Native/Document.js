@@ -1,4 +1,4 @@
-var _jtojnar$almafoss$Native_Document = function() {
+var _fossar$almafoss$Native_Document = function() {
 
 	function title(title) {
 		return _elm_lang$core$Native_Scheduler.nativeBinding(function(callback) {
