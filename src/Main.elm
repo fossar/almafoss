@@ -50,7 +50,6 @@ type alias DisplayItem =
 type alias Model =
     { host : String
     , lang : Language
-    , error : Maybe String
     , items : RemoteData.WebData (List DisplayItem)
     , tags : RemoteData.WebData (List Tag)
     , sources : RemoteData.WebData (List Source)
@@ -102,7 +101,6 @@ init { host } location =
         initialModel =
             { host = host
             , lang = lang
-            , error = Nothing
             , items = RemoteData.NotAsked
             , tags = RemoteData.NotAsked
             , sources = RemoteData.NotAsked
@@ -130,11 +128,10 @@ type Msg
     | Deauthenticate
     | ShowItemList Filter
     | ShowSourceList
-    | FetchingFailed Http.Error
-    | ItemsFetched (List Item)
-    | TagsFetched (List Tag)
-    | SourcesFetched (List Source)
-    | StatsFetched Stats
+    | ItemsResponse (Result Http.Error (List Item))
+    | TagsResponse (Result Http.Error (List Tag))
+    | SourcesResponse (Result Http.Error (List Source))
+    | StatsResponse (Result Http.Error Stats)
     | AuthForm AuthForm.Msg
     | SourceList SourceList.Msg
     | ComboMsg Kbd.Msg
@@ -278,38 +275,41 @@ update action model =
         Refresh ->
             ( { model | items = RemoteData.Loading }, fetchItems model )
 
-        ItemsFetched entries ->
-            ( { model
-                | items = RemoteData.Success (List.map (\item -> { item = item, open = False }) entries)
-              }
-            , Cmd.none
-            )
+        ItemsResponse result ->
+            case result of
+                Ok entries ->
+                    let
+                        newItems =
+                            (List.map (\item -> { item = item, open = False }) entries)
+                    in
+                        ( { model | items = RemoteData.Success newItems }, Cmd.none )
 
-        TagsFetched tags ->
-            ( { model | tags = RemoteData.Success tags }, Cmd.none )
+                Err err ->
+                    ( { model | items = RemoteData.Failure err }, Cmd.none )
 
-        SourcesFetched sources ->
-            ( { model | sources = RemoteData.Success sources }, Cmd.none )
+        TagsResponse result ->
+            case result of
+                Ok tags ->
+                    ( { model | tags = RemoteData.Success tags }, Cmd.none )
 
-        StatsFetched stats ->
-            ( { model | stats = RemoteData.Success stats }, Cmd.none )
+                Err err ->
+                    ( { model | tags = RemoteData.Failure err }, Cmd.none )
 
-        FetchingFailed err ->
-            ( { model
-                | error =
-                    Just <|
-                        case err of
-                            Http.BadStatus { status } ->
-                                if status.code == 403 then
-                                    translate model.lang Messages.AuthenticationRequired
-                                else
-                                    toString err
+        SourcesResponse result ->
+            case result of
+                Ok sources ->
+                    ( { model | sources = RemoteData.Success sources }, Cmd.none )
 
-                            _ ->
-                                toString err
-              }
-            , Cmd.none
-            )
+                Err err ->
+                    ( { model | sources = RemoteData.Failure err }, Cmd.none )
+
+        StatsResponse result ->
+            case result of
+                Ok stats ->
+                    ( { model | stats = RemoteData.Success stats }, Cmd.none )
+
+                Err err ->
+                    ( { model | stats = RemoteData.Failure err }, Cmd.none )
 
         Authenticate ->
             ( model, Navigation.newUrl <| Routing.link Routing.AuthError )
@@ -1210,7 +1210,15 @@ mainContent model =
                             div [ class "entries", role Role.Feed ] entries
 
                 RemoteData.Failure err ->
-                    Markdown.toHtml [] (toString err)
+                    case err of
+                        Http.BadStatus { status } ->
+                            if status.code == 403 then
+                                text <| translate model.lang Messages.AuthenticationRequired
+                            else
+                                Markdown.toHtml [] (toString err)
+
+                        _ ->
+                            Markdown.toHtml [] (toString err)
 
         Routing.SourceList ->
             Html.map SourceList (SourceList.sourceList model.sourceList)
@@ -1248,56 +1256,28 @@ fetchItems model =
         Api.items
             model
             filter
-            (\res ->
-                case res of
-                    Ok r ->
-                        ItemsFetched r
-
-                    Err e ->
-                        FetchingFailed e
-            )
+            ItemsResponse
 
 
 fetchTags : Model -> Cmd Msg
 fetchTags model =
     Api.tags
         model
-        (\res ->
-            case res of
-                Ok r ->
-                    TagsFetched r
-
-                Err e ->
-                    FetchingFailed e
-        )
+        TagsResponse
 
 
 fetchStats : Model -> Cmd Msg
 fetchStats model =
     Api.stats
         model
-        (\res ->
-            case res of
-                Ok r ->
-                    StatsFetched r
-
-                Err e ->
-                    FetchingFailed e
-        )
+        StatsResponse
 
 
 fetchSources : Model -> Cmd Msg
 fetchSources model =
     Api.sources
         model
-        (\res ->
-            case res of
-                Ok r ->
-                    SourcesFetched r
-
-                Err e ->
-                    FetchingFailed e
-        )
+        SourcesResponse
 
 
 markItemRead : Model -> Item -> Cmd Msg

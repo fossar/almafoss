@@ -375,6 +375,9 @@ sourceData model data =
 
                 Nothing ->
                     Debug.crash "Trying to get title of non-existent spout."
+
+        sourceFormEntryId entry =
+            "source-" ++ sourceIdToString sourceId ++ "-form-" ++ entry
     in
         article [ id ("source-" ++ sourceIdToString sourceId), classList [ ( "source", True ), ( "open", open ) ], ariaExpanded (Just open) ]
             [ header [ class "source-header" ]
@@ -413,18 +416,18 @@ sourceData model data =
                  in
                     icon ++ title ++ info
                 )
-            , div [ class "source-form source-content" ]
+            , div [ class "source-form source-content", onEnter (Save sourceId) ]
                 [ Html.div [ class "form-group" ]
-                    [ Html.label [ for ("source-form-title-" ++ sourceIdToString sourceId) ] [ text <| translate model.lang Messages.SourceTitle ]
-                    , Html.div [ class "form-control" ] [ input [ id ("source-form-title-" ++ sourceIdToString sourceId), type_ "text", onInput (UpdateSourceTitle sourceId), value modified.title, onEnter (Save sourceId) ] [] ]
+                    [ Html.label [ for (sourceFormEntryId "title") ] [ text <| translate model.lang Messages.SourceTitle ]
+                    , Html.div [ class "form-control" ] [ InputWidget.lineEdit [ id (sourceFormEntryId "title") ] modified.title ] |> Html.map (UpdateSourceTitle sourceId)
                     ]
                 , Html.div [ class "form-group" ]
-                    [ Html.label [ for ("source-form-tags-" ++ sourceIdToString sourceId) ] [ text <| translate model.lang Messages.SourceTags ]
-                    , Html.div [ class "form-control" ] [ input [ id ("source-form-tags-" ++ sourceIdToString sourceId), type_ "text", onInput (UpdateSourceTags sourceId), value (String.join "," modified.tags), onEnter (Save sourceId) ] [] ]
+                    [ Html.label [ for (sourceFormEntryId "tags") ] [ text <| translate model.lang Messages.SourceTags ]
+                    , Html.div [ class "form-control" ] [ InputWidget.lineEdit [ id (sourceFormEntryId "tags") ] (String.join "," modified.tags) ] |> Html.map (UpdateSourceTags sourceId)
                     ]
                 , Html.div [ class "form-group" ]
-                    [ Html.label [ for ("source-form-spout-" ++ sourceIdToString sourceId) ] [ text <| translate model.lang Messages.SourceSpout ]
-                    , Html.div [ class "form-control" ] [ InputWidget.comboBox [ id ("source-form-spout-" ++ sourceIdToString sourceId) {- , type_ "text", value modified.spout, onEnter (Save sourceId) -} ] getSpoutTitle (Dict.keys spouts) modified.spout |> Html.map (UpdateSourceSpout sourceId) ]
+                    [ Html.label [ for (sourceFormEntryId "spout") ] [ text <| translate model.lang Messages.SourceSpout ]
+                    , Html.div [ class "form-control" ] [ InputWidget.comboBox [ id (sourceFormEntryId "spout") ] getSpoutTitle (Dict.keys spouts) modified.spout |> Html.map (UpdateSourceSpout sourceId) ]
                     ]
                 ]
             , sourceDataPanel model sourceId
