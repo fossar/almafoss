@@ -87,12 +87,6 @@ translator str =
         Refresh ->
             t "Obnovit"
 
-        RefreshTags ->
-            t "Obnovit štítky"
-
-        RefreshSources ->
-            t "Obnovit zdroje"
-
         ItemListTitle ->
             t "Seznam příspěvků"
 

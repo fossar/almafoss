@@ -29,8 +29,6 @@ type Message
     | Sources
     | NumberUnread Int
     | Refresh
-    | RefreshTags
-    | RefreshSources
     | ItemListTitle
     | Loading
     | NoEntries

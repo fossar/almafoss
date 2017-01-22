@@ -1,4 +1,4 @@
-module SourceList exposing (Model, Msg(..), init, changeLang, update, sourceList)
+module SourceList exposing (Model, Msg(..), init, changeLang, update, sourceList, fetchSourceData)
 
 {-| This module takes care of user authentication.
 
@@ -9,7 +9,7 @@ module SourceList exposing (Model, Msg(..), init, changeLang, update, sourceList
 @docs init, changeLang
 
 ## Update
-@docs update
+@docs update, fetchSourceData
 
 ## View
 @docs sourceList
@@ -25,7 +25,9 @@ import Http
 import List.Extra as List
 import Locale exposing (translate)
 import Localization.Language exposing (Language, nativeName)
+import Markdown
 import Messages
+import RemoteData exposing (RemoteData(..), WebData)
 import Types exposing (..)
 import Time.DateTime exposing (toISO8601)
 import Utils exposing (onEnter)
@@ -37,8 +39,7 @@ type alias Model =
     { host : String
     , lang : Language
     , credentials : Maybe Credentials
-    , data : List DisplaySourceData
-    , error : Maybe Http.Error
+    , data : WebData (List DisplaySourceData)
     }
 
 
@@ -95,9 +96,8 @@ type Msg
     | UpdateSourceTitle SourceDataId String
     | UpdateSourceTags SourceDataId String
     | UpdateSourceSpout SourceDataId String
-    | SourceDataFetched (List SourceData)
-    | SourceDataUpdated SourceDataId Int
-    | FetchingFailed Http.Error
+    | SourceDataResponse (Result Http.Error (List SourceData))
+    | SourceDataUpdateResponse SourceDataId (Result Http.Error Int)
     | NoOp
 
 
@@ -110,11 +110,10 @@ init host lang credentials =
             { host = host
             , lang = lang
             , credentials = credentials
-            , data = []
-            , error = Nothing
+            , data = NotAsked
             }
     in
-        ( initialModel, fetchSourceData initialModel )
+        ( initialModel, Cmd.none )
 
 
 {-| Change language of the component
@@ -128,139 +127,190 @@ changeLang lang model =
 -}
 update : Msg -> Model -> ( Model, Cmd Msg )
 update action model =
-    let
-        _ = Debug.log "moo" action
-        _ = Debug.log "moo" model
-    in
     case action of
         AddSource ->
-            let
-                newSourceData =
-                    { id = 0
-                    , title = ""
-                    , tags = []
-                    , spout = ""
-                    , params = Dict.empty
-                    , error = Nothing
-                    , lastentry = Nothing
-                    , icon = Nothing
-                    }
+            case model.data of
+                RemoteData.Success data ->
+                    let
+                        newSourceData =
+                            { id = 0
+                            , title = ""
+                            , tags = []
+                            , spout = ""
+                            , params = Dict.empty
+                            , error = Nothing
+                            , lastentry = Nothing
+                            , icon = Nothing
+                            }
 
-                newDisplaySourceData =
-                    { id = Temporary (nextSourceId model.data)
-                    , source = newSourceData
-                    , open = True
-                    , modified = newSourceData
-                    }
+                        newDisplaySourceData =
+                            { id = Temporary (nextSourceId data)
+                            , source = newSourceData
+                            , open = True
+                            , modified = newSourceData
+                            }
 
-                newData =
-                    newDisplaySourceData :: model.data
-            in
-                ( { model | data = newData }, Cmd.none )
+                        newData =
+                            newDisplaySourceData :: data
+                    in
+                        ( { model | data = RemoteData.Success newData }, Cmd.none )
+
+                _ ->
+                    ( model, Cmd.none )
 
         UpdateSourceTitle sourceId title ->
-            let
-                upd source =
+            case model.data of
+                RemoteData.Success data ->
                     let
-                        oldModified =
-                            source.modified
+                        upd source =
+                            let
+                                oldModified =
+                                    source.modified
 
-                        newModified =
-                            { oldModified | title = title }
+                                newModified =
+                                    { oldModified | title = title }
+                            in
+                                { source | modified = newModified }
+
+                        newData =
+                            List.updateIf (\source -> source.id == sourceId) upd data
                     in
-                        { source | modified = newModified }
+                        ( { model | data = RemoteData.Success newData }, Cmd.none )
 
-                newData =
-                    List.updateIf (\source -> source.id == sourceId) upd model.data
-            in
-                ( { model | data = newData }, Cmd.none )
+                _ ->
+                    ( model, Cmd.none )
 
         UpdateSourceTags sourceId tags ->
-            let
-                upd source =
+            case model.data of
+                RemoteData.Success data ->
                     let
-                        oldModified =
-                            source.modified
+                        upd source =
+                            let
+                                oldModified =
+                                    source.modified
 
-                        newModified =
-                            { oldModified | tags = (String.split "," tags) }
+                                newModified =
+                                    { oldModified | tags = (String.split "," tags) }
+                            in
+                                { source | modified = newModified }
+
+                        newData =
+                            List.updateIf (\source -> source.id == sourceId) upd data
                     in
-                        { source | modified = newModified }
+                        ( { model | data = RemoteData.Success newData }, Cmd.none )
 
-                newData =
-                    List.updateIf (\source -> source.id == sourceId) upd model.data
-            in
-                ( { model | data = newData }, Cmd.none )
+                _ ->
+                    ( model, Cmd.none )
 
         UpdateSourceSpout sourceId spout ->
-            let
-                upd source =
+            case model.data of
+                RemoteData.Success data ->
                     let
-                        oldModified =
-                            source.modified
+                        upd source =
+                            let
+                                oldModified =
+                                    source.modified
 
-                        newModified =
-                            { oldModified | spout = spout }
+                                newModified =
+                                    { oldModified | spout = spout }
+                            in
+                                { source | modified = newModified }
+
+                        newData =
+                            List.updateIf (\source -> source.id == sourceId) upd data
                     in
-                        { source | modified = newModified }
+                        ( { model | data = RemoteData.Success newData }, Cmd.none )
 
-                newData =
-                    List.updateIf (\source -> source.id == sourceId) upd model.data
-            in
-                ( { model | data = newData }, Cmd.none )
+                _ ->
+                    ( model, Cmd.none )
 
         Edit sourceId ->
-            let
-                upd source =
-                    { source | open = True }
+            case model.data of
+                RemoteData.Success data ->
+                    let
+                        upd source =
+                            { source | open = True }
 
-                newData =
-                    List.updateIf (\source -> source.id == sourceId) upd model.data
-            in
-                ( { model | data = newData }, Cmd.none )
+                        newData =
+                            List.updateIf (\source -> source.id == sourceId) upd data
+                    in
+                        ( { model | data = RemoteData.Success newData }, Cmd.none )
+
+                _ ->
+                    ( model, Cmd.none )
 
         Cancel sourceId ->
-            let
-                upd source =
-                    { source | open = False, modified = source.source }
+            case model.data of
+                RemoteData.Success data ->
+                    let
+                        upd source =
+                            { source | open = False, modified = source.source }
 
-                newData =
-                    List.updateIf (\source -> source.id == sourceId) upd model.data
-            in
-                ( { model | data = newData }, Cmd.none )
+                        newData =
+                            List.updateIf (\source -> source.id == sourceId) upd data
+                    in
+                        ( { model | data = RemoteData.Success newData }, Cmd.none )
+
+                _ ->
+                    ( model, Cmd.none )
 
         Save sourceId ->
-            let
-                upd source =
-                    { source | open = False }
+            case model.data of
+                RemoteData.Success data ->
+                    let
+                        upd source =
+                            { source | open = False, source = source.modified }
 
-                newData =
-                    List.updateIf (\source -> source.id == sourceId) upd model.data
+                        newData =
+                            List.updateIf (\source -> source.id == sourceId) upd data
 
-                source =
-                    Maybe.withDefault (Debug.crash "Trying to save non-existent source.") (List.find (\source -> source.id == sourceId) model.data)
-            in
-                ( { model | data = newData }, updateSourceData model sourceId source.source )
+                        source =
+                            case List.find (\source -> source.id == sourceId) newData of
+                                Just source ->
+                                    source
 
-        SourceDataUpdated originalId newId ->
-            let
-                upd source =
-                    { source | id = Saved newId }
+                                Nothing ->
+                                    Debug.crash "Trying to save non-existent source."
 
-                newData =
-                    List.updateIf (\source -> source.id == originalId) upd model.data
-            in
-                ( { model | data = newData }, Cmd.none )
+                        newModel =
+                            { model | data = RemoteData.Success newData }
+                    in
+                        ( newModel, updateSourceData newModel sourceId source.source )
 
-        SourceDataFetched data ->
-            let
-                sourceFmt src =
-                    DisplaySourceData (Saved src.id) src False src
-            in
-                ( { model | data = List.map sourceFmt data }, Cmd.none )
+                _ ->
+                    ( model, Cmd.none )
 
-        FetchingFailed err ->
-            ( { model | error = Just err }, Cmd.none )
+        SourceDataUpdateResponse originalId respondedId ->
+            case model.data of
+                RemoteData.Success data ->
+                    case respondedId of
+                        Ok newId ->
+                            let
+                                upd source =
+                                    { source | id = Saved newId }
+
+                                newData =
+                                    List.updateIf (\source -> source.id == originalId) upd data
+                            in
+                                ( { model | data = RemoteData.Success newData }, Cmd.none )
+
+                        Err err ->
+                            ( { model | data = RemoteData.Failure err }, Cmd.none )
+
+                _ ->
+                    ( model, Cmd.none )
+
+        SourceDataResponse response ->
+            case response of
+                Ok data ->
+                    let
+                        sourceFmt src =
+                            DisplaySourceData (Saved src.id) src False src
+                    in
+                        ( { model | data = RemoteData.Success (List.map sourceFmt data) }, Cmd.none )
+
+                Err err ->
+                    ( { model | data = RemoteData.Failure err }, Cmd.none )
 
         NoOp ->
             ( model, Cmd.none )
@@ -270,17 +320,28 @@ update action model =
 -}
 sourceList : Model -> Html Msg
 sourceList model =
-    if List.isEmpty model.data then
-        text <| translate model.lang Messages.NoSources
-    else
-        let
-            sources =
-                List.map (sourceData model) model.data
-        in
-            div []
-                [ button [ onClick AddSource ] [ text <| translate model.lang Messages.AddSource ]
-                , div [] sources
-                ]
+    case model.data of
+        RemoteData.NotAsked ->
+            Debug.crash "Trying to show source list and did not ask for data."
+
+        RemoteData.Loading ->
+            text <| translate model.lang Messages.Loading
+
+        RemoteData.Success data ->
+            if List.isEmpty data then
+                text <| translate model.lang Messages.NoSources
+            else
+                let
+                    sources =
+                        List.map (sourceData model) data
+                in
+                    div []
+                        [ button [ onClick AddSource ] [ text <| translate model.lang Messages.AddSource ]
+                        , div [] sources
+                        ]
+
+        RemoteData.Failure err ->
+            Markdown.toHtml [] (toString err)
 
 
 sourceData : Model -> DisplaySourceData -> Html Msg
@@ -364,23 +425,18 @@ sourceDataPanel model sourceId =
             (saveButton ++ cancelButton)
 
 
+{-| -}
 fetchSourceData : Model -> Cmd Msg
 fetchSourceData model =
     Api.sourceData
         model
-        (\res ->
-            case res of
-                Ok r ->
-                    (SourceDataFetched r)
-
-                Err e ->
-                    (FetchingFailed e)
-        )
+        SourceDataResponse
 
 
 updateSourceData : Model -> SourceDataId -> SourceData -> Cmd Msg
 updateSourceData model originalId data =
     let
+        call : Model -> SourceData -> (Result Http.Error Int -> Msg) -> Cmd Msg
         call =
             case originalId of
                 Temporary id ->
@@ -392,11 +448,4 @@ updateSourceData model originalId data =
         call
             model
             data
-            (\res ->
-                case res of
-                    Ok newId ->
-                        (SourceDataUpdated originalId newId)
-
-                    Err e ->
-                        (FetchingFailed e)
-            )
+            (SourceDataUpdateResponse originalId)

@@ -84,12 +84,6 @@ translator str =
         Refresh ->
             t "Refresh"
 
-        RefreshTags ->
-            t "Refresh tags"
-
-        RefreshSources ->
-            t "Refresh sources"
-
         ItemListTitle ->
             t "List of items"
 

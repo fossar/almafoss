@@ -12,7 +12,12 @@ Set-up
 ------
 
 1. Update `host` field in the `index.html` to match your selfoss installation.
-2. If the selfoss installation is on different host, enable [remote access](https://developer.mozilla.org/en-US/docs/Web/HTTP/Access_control_CORS#Access-Control-Allow-Origin) to selfoss by adding `Header set Access-Control-Allow-Origin "https://almafoss-host.example.org"` to selfoss’s `.htaccess` file.
+
+2. If the selfoss installation is on different host, enable [remote access](https://developer.mozilla.org/en-US/docs/Web/HTTP/Access_control_CORS#Access-Control-Allow-Origin) to selfoss by adding following lines to selfoss’s `.htaccess` file.
+ ```apache
+ Header set "Access-Control-Allow-Origin" "https://almafoss-host.example.org"
+ Header set "Access-Control-Allow-Headers" "Content-Type"
+ ```
 
 Development
 -----------

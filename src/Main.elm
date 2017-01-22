@@ -26,6 +26,7 @@ import Markdown
 import Maybe.Extra as Maybe
 import Messages
 import Navigation exposing (Location)
+import RemoteData
 import Routing
 import Scroll
 import SourceList
@@ -51,11 +52,11 @@ type alias Model =
     , lang : Language
     , title : String
     , error : Maybe String
-    , items : List DisplayItem
-    , tags : List Tag
-    , sources : List Source
+    , items : RemoteData.WebData (List DisplayItem)
+    , tags : RemoteData.WebData (List Tag)
+    , sources : RemoteData.WebData (List Source)
     , sourceList : SourceList.Model
-    , stats : Stats
+    , stats : RemoteData.WebData Stats
     , credentials : Maybe Credentials
     , authForm : AuthForm.Model
     , combos : Kbd.Model Msg
@@ -63,7 +64,6 @@ type alias Model =
     , filtersExpanded : Bool
     , tagsExpanded : Bool
     , sourcesExpanded : Bool
-    , loading : Bool
     }
 
 
@@ -105,24 +105,21 @@ init { host } location =
             , lang = lang
             , title = "álmafoss"
             , error = Nothing
-            , items = []
-            , tags = []
-            , sources = []
+            , items = RemoteData.NotAsked
+            , tags = RemoteData.NotAsked
+            , sources = RemoteData.NotAsked
             , sourceList = sourceListModel
-            , stats = Stats 0 0 0
+            , stats = RemoteData.NotAsked
             , credentials = Nothing
             , authForm = AuthForm.initModel host defaultLanguage
             , combos = Kbd.init ComboMsg keyboardCombos
             , filtersExpanded = True
             , tagsExpanded = True
             , sourcesExpanded = False
-            , loading = False
             , route = currentRoute
             }
     in
-        ( initialModel
-        , Cmd.batch (Cmd.map SourceList sourceListCmds :: extraCmds Nothing initialModel)
-        )
+        extraCmds Nothing ( initialModel, Cmd.none )
 
 
 
@@ -131,8 +128,6 @@ init { host } location =
 
 type Msg
     = Refresh
-    | RefreshTags
-    | RefreshSources
     | Authenticate
     | Deauthenticate
     | ShowItemList Filter
@@ -177,8 +172,8 @@ setTitle title =
     Task.perform (always NoOp) (Document.title title)
 
 
-extraCmds : Maybe Model -> Model -> List (Cmd Msg)
-extraCmds maybeOldModel newModel =
+extraCmds : Maybe Model -> ( Model, Cmd Msg ) -> ( Model, Cmd Msg )
+extraCmds maybeOldModel ( model, cmds ) =
     let
         stripActiveId route =
             case route of
@@ -188,60 +183,93 @@ extraCmds maybeOldModel newModel =
                 _ ->
                     route
 
-        routeChanged =
+        routeUnchanged =
             case maybeOldModel of
                 Just oldModel ->
-                    stripActiveId oldModel.route == stripActiveId newModel.route
+                    stripActiveId oldModel.route == stripActiveId model.route
 
                 Nothing ->
                     False
     in
-        if routeChanged then
-            [ Cmd.none ]
+        if routeUnchanged then
+            ( model, cmds )
         else
-            case newModel.route of
+            case model.route of
                 Routing.AuthError ->
-                    [ Task.attempt (always NoOp) (Dom.focus "auth-form-username") ]
+                    let
+                        focusUsername =
+                            Task.attempt (always NoOp) (Dom.focus "auth-form-username")
+
+                        newCmds =
+                            Cmd.batch [ focusUsername, cmds ]
+                    in
+                        ( model, newCmds )
 
                 Routing.ItemList _ ->
-                    [ fetchItems newModel
-                    , fetchTags newModel
-                    , fetchSources newModel
-                    , fetchStats newModel
-                    ]
+                    let
+                        newCmds =
+                            Cmd.batch
+                                [ fetchItems model
+                                , fetchTags model
+                                , fetchSources model
+                                , fetchStats model
+                                , cmds
+                                ]
+
+                        newModel =
+                            { model
+                                | items = RemoteData.Loading
+                                , tags = RemoteData.Loading
+                                , sources = RemoteData.Loading
+                                , stats = RemoteData.Loading
+                            }
+                    in
+                        ( newModel, newCmds )
+
+                Routing.SourceList ->
+                    let
+                        newCmds =
+                            Cmd.batch
+                                [ Cmd.map SourceList (SourceList.fetchSourceData model.sourceList)
+                                , cmds
+                                ]
+
+                        sourceList =
+                            model.sourceList
+
+                        newSourceList =
+                            { sourceList | data = RemoteData.Loading }
+
+                        newModel =
+                            { model | sourceList = newSourceList }
+                    in
+                        ( newModel, newCmds )
 
                 _ ->
-                    [ Cmd.none ]
+                    ( model, cmds )
 
 
 update : Msg -> Model -> ( Model, Cmd Msg )
 update action model =
     case action of
         Refresh ->
-            ( { model | loading = True }, fetchItems model )
-
-        RefreshTags ->
-            ( model, fetchTags model )
-
-        RefreshSources ->
-            ( model, fetchSources model )
+            ( { model | items = RemoteData.Loading }, fetchItems model )
 
         ItemsFetched entries ->
             ( { model
-                | loading = False
-                , items = List.map (\item -> { item = item, open = False }) entries
+                | items = RemoteData.Success (List.map (\item -> { item = item, open = False }) entries)
               }
             , Cmd.none
             )
 
         TagsFetched tags ->
-            ( { model | tags = tags }, Cmd.none )
+            ( { model | tags = RemoteData.Success tags }, Cmd.none )
 
         SourcesFetched sources ->
-            ( { model | sources = sources }, Cmd.none )
+            ( { model | sources = RemoteData.Success sources }, Cmd.none )
 
         StatsFetched stats ->
-            ( { model | stats = stats }, Cmd.none )
+            ( { model | stats = RemoteData.Success stats }, Cmd.none )
 
         FetchingFailed err ->
             ( { model
@@ -268,29 +296,17 @@ update action model =
 
         ShowItemList filter ->
             let
-                newModel =
-                    { model | loading = True }
-
-                cmds =
-                    Cmd.batch
-                        [ Navigation.newUrl <| Routing.link (Routing.ItemList { activeItem = Nothing, filter = filter })
-                        , fetchItems model
-                        ]
+                cmd =
+                    Navigation.newUrl <| Routing.link (Routing.ItemList { activeItem = Nothing, filter = filter })
             in
-                ( newModel, cmds )
+                ( model, cmd )
 
         ShowSourceList ->
             let
-                newModel =
-                    { model | loading = True }
-
-                cmds =
-                    Cmd.batch
-                        [ Navigation.newUrl <| Routing.link Routing.SourceList
-                        , fetchSources model
-                        ]
+                cmd =
+                    Navigation.newUrl <| Routing.link Routing.SourceList
             in
-                ( newModel, cmds )
+                ( model, cmd )
 
         AuthForm (AuthForm.AuthSucceeded credentials) ->
             let
@@ -299,40 +315,40 @@ update action model =
                         | credentials = Just credentials
                     }
 
-                cmds =
-                    Cmd.batch
-                        [ fetchItems newModel
-                        , Navigation.newUrl <| Routing.link initialRoute
-                        ]
+                cmd =
+                    Navigation.newUrl <| Routing.link initialRoute
             in
-                ( newModel
-                , cmds
-                )
+                ( newModel, cmd )
 
         OpenLink ->
             case model.route of
                 Routing.ItemList listData ->
-                    let
-                        openCmd =
-                            case listData.activeItem of
-                                Just activeId ->
-                                    case getById model.items activeId of
-                                        Just { item } ->
-                                            Task.attempt (always NoOp)
-                                                (Window.open item.url)
+                    case model.items of
+                        RemoteData.Success items ->
+                            let
+                                openCmd =
+                                    case listData.activeItem of
+                                        Just activeId ->
+                                            case getById items activeId of
+                                                Just { item } ->
+                                                    Task.attempt (always NoOp)
+                                                        (Window.open item.url)
+
+                                                Nothing ->
+                                                    Cmd.none
 
                                         Nothing ->
                                             Cmd.none
 
-                                Nothing ->
-                                    Cmd.none
+                                getById items itemId =
+                                    items
+                                        |> List.find
+                                            (\item -> item.item.id == itemId)
+                            in
+                                ( model, openCmd )
 
-                        getById items itemId =
-                            items
-                                |> List.find
-                                    (\item -> item.item.id == itemId)
-                    in
-                        ( model, openCmd )
+                        _ ->
+                            ( model, Cmd.none )
 
                 _ ->
                     ( model, Cmd.none )
@@ -340,26 +356,31 @@ update action model =
         SelectPrevious ->
             case model.route of
                 Routing.ItemList listData ->
-                    let
-                        previousItem =
-                            findPrevious (List.map .item model.items) listData.activeItem
+                    case model.items of
+                        RemoteData.Success items ->
+                            let
+                                previousItem =
+                                    findPrevious (List.map .item items) listData.activeItem
 
-                        scrollCmd =
-                            case previousItem of
-                                Just activeId ->
-                                    Task.attempt (always NoOp)
-                                        (Scroll.intoView ("entry-" ++ toString activeId))
+                                scrollCmd =
+                                    case previousItem of
+                                        Just activeId ->
+                                            Task.attempt (always NoOp)
+                                                (Scroll.intoView ("entry-" ++ toString activeId))
 
-                                Nothing ->
-                                    Cmd.none
+                                        Nothing ->
+                                            Cmd.none
 
-                        cmds =
-                            Cmd.batch
-                                [ Navigation.newUrl <| Routing.link (Routing.ItemList { listData | activeItem = previousItem })
-                                , scrollCmd
-                                ]
-                    in
-                        ( model, cmds )
+                                cmds =
+                                    Cmd.batch
+                                        [ Navigation.newUrl <| Routing.link (Routing.ItemList { listData | activeItem = previousItem })
+                                        , scrollCmd
+                                        ]
+                            in
+                                ( model, cmds )
+
+                        _ ->
+                            ( model, Cmd.none )
 
                 _ ->
                     ( model, Cmd.none )
@@ -367,26 +388,31 @@ update action model =
         SelectNext ->
             case model.route of
                 Routing.ItemList listData ->
-                    let
-                        nextItem =
-                            findNext (List.map .item model.items) listData.activeItem
+                    case model.items of
+                        RemoteData.Success items ->
+                            let
+                                nextItem =
+                                    findNext (List.map .item items) listData.activeItem
 
-                        scrollCmd =
-                            case nextItem of
-                                Just activeId ->
-                                    Task.attempt (always NoOp)
-                                        (Scroll.intoView ("entry-" ++ toString activeId))
+                                scrollCmd =
+                                    case nextItem of
+                                        Just activeId ->
+                                            Task.attempt (always NoOp)
+                                                (Scroll.intoView ("entry-" ++ toString activeId))
 
-                                Nothing ->
-                                    Cmd.none
+                                        Nothing ->
+                                            Cmd.none
 
-                        cmds =
-                            Cmd.batch
-                                [ Navigation.newUrl <| Routing.link (Routing.ItemList { listData | activeItem = nextItem })
-                                , scrollCmd
-                                ]
-                    in
-                        ( model, cmds )
+                                cmds =
+                                    Cmd.batch
+                                        [ Navigation.newUrl <| Routing.link (Routing.ItemList { listData | activeItem = nextItem })
+                                        , scrollCmd
+                                        ]
+                            in
+                                ( model, cmds )
+
+                        _ ->
+                            ( model, Cmd.none )
 
                 _ ->
                     ( model, Cmd.none )
@@ -394,38 +420,43 @@ update action model =
         ActivatePrevious ->
             case model.route of
                 Routing.ItemList listData ->
-                    let
-                        previousItem =
-                            findPrevious (List.map .item model.items) listData.activeItem
+                    case model.items of
+                        RemoteData.Success items ->
+                            let
+                                previousItem =
+                                    findPrevious (List.map .item items) listData.activeItem
 
-                        scrollCmd =
-                            case previousItem of
-                                Just activeId ->
-                                    Task.attempt (always NoOp)
-                                        (Scroll.intoView ("entry-" ++ toString activeId))
+                                scrollCmd =
+                                    case previousItem of
+                                        Just activeId ->
+                                            Task.attempt (always NoOp)
+                                                (Scroll.intoView ("entry-" ++ toString activeId))
 
-                                Nothing ->
-                                    Cmd.none
+                                        Nothing ->
+                                            Cmd.none
 
-                        newItems =
-                            model.items
-                                |> List.map
-                                    (\item ->
-                                        if Just item.item.id == listData.activeItem then
-                                            { item | open = False }
-                                        else if Just item.item.id == previousItem then
-                                            { item | open = True }
-                                        else
-                                            item
-                                    )
+                                newItems =
+                                    items
+                                        |> List.map
+                                            (\item ->
+                                                if Just item.item.id == listData.activeItem then
+                                                    { item | open = False }
+                                                else if Just item.item.id == previousItem then
+                                                    { item | open = True }
+                                                else
+                                                    item
+                                            )
 
-                        cmds =
-                            Cmd.batch
-                                [ Navigation.newUrl <| Routing.link (Routing.ItemList { listData | activeItem = previousItem })
-                                , scrollCmd
-                                ]
-                    in
-                        ( { model | items = newItems }, cmds )
+                                cmds =
+                                    Cmd.batch
+                                        [ Navigation.newUrl <| Routing.link (Routing.ItemList { listData | activeItem = previousItem })
+                                        , scrollCmd
+                                        ]
+                            in
+                                ( { model | items = RemoteData.Success newItems }, cmds )
+
+                        _ ->
+                            ( model, Cmd.none )
 
                 _ ->
                     ( model, Cmd.none )
@@ -433,38 +464,43 @@ update action model =
         ActivateNext ->
             case model.route of
                 Routing.ItemList listData ->
-                    let
-                        nextItem =
-                            findNext (List.map .item model.items) listData.activeItem
+                    case model.items of
+                        RemoteData.Success items ->
+                            let
+                                nextItem =
+                                    findNext (List.map .item items) listData.activeItem
 
-                        scrollCmd =
-                            case nextItem of
-                                Just activeId ->
-                                    Task.attempt (always NoOp)
-                                        (Scroll.intoView ("entry-" ++ toString activeId))
+                                scrollCmd =
+                                    case nextItem of
+                                        Just activeId ->
+                                            Task.attempt (always NoOp)
+                                                (Scroll.intoView ("entry-" ++ toString activeId))
 
-                                Nothing ->
-                                    Cmd.none
+                                        Nothing ->
+                                            Cmd.none
 
-                        newItems =
-                            model.items
-                                |> List.map
-                                    (\item ->
-                                        if Just item.item.id == listData.activeItem then
-                                            { item | open = False }
-                                        else if Just item.item.id == nextItem then
-                                            { item | open = True }
-                                        else
-                                            item
-                                    )
+                                newItems =
+                                    items
+                                        |> List.map
+                                            (\item ->
+                                                if Just item.item.id == listData.activeItem then
+                                                    { item | open = False }
+                                                else if Just item.item.id == nextItem then
+                                                    { item | open = True }
+                                                else
+                                                    item
+                                            )
 
-                        cmds =
-                            Cmd.batch
-                                [ Navigation.newUrl <| Routing.link (Routing.ItemList { listData | activeItem = nextItem })
-                                , scrollCmd
-                                ]
-                    in
-                        ( { model | items = newItems }, cmds )
+                                cmds =
+                                    Cmd.batch
+                                        [ Navigation.newUrl <| Routing.link (Routing.ItemList { listData | activeItem = nextItem })
+                                        , scrollCmd
+                                        ]
+                            in
+                                ( { model | items = RemoteData.Success newItems }, cmds )
+
+                        _ ->
+                            ( model, Cmd.none )
 
                 _ ->
                     ( model, Cmd.none )
@@ -472,23 +508,28 @@ update action model =
         ActivateEntry itemId ->
             case model.route of
                 Routing.ItemList listData ->
-                    let
-                        newItems =
-                            model.items
-                                |> List.map
-                                    (\item ->
-                                        if Just item.item.id == itemId then
-                                            { item | open = not item.open }
-                                        else
-                                            item
-                                    )
+                    case model.items of
+                        RemoteData.Success items ->
+                            let
+                                newItems =
+                                    items
+                                        |> List.map
+                                            (\item ->
+                                                if Just item.item.id == itemId then
+                                                    { item | open = not item.open }
+                                                else
+                                                    item
+                                            )
 
-                        cmds =
-                            Cmd.batch
-                                [ Navigation.newUrl <| Routing.link (Routing.ItemList { listData | activeItem = itemId })
-                                ]
-                    in
-                        ( { model | items = newItems }, cmds )
+                                cmds =
+                                    Cmd.batch
+                                        [ Navigation.newUrl <| Routing.link (Routing.ItemList { listData | activeItem = itemId })
+                                        ]
+                            in
+                                ( { model | items = RemoteData.Success newItems }, cmds )
+
+                        _ ->
+                            ( model, Cmd.none )
 
                 _ ->
                     ( model, Cmd.none )
@@ -496,14 +537,19 @@ update action model =
         ToggleLinkOpen ->
             case model.route of
                 Routing.ItemList listData ->
-                    let
-                        upd item =
-                            { item | open = not item.open }
+                    case model.items of
+                        RemoteData.Success items ->
+                            let
+                                upd item =
+                                    { item | open = not item.open }
 
-                        newItems =
-                            List.updateIf (\item -> Just item.item.id == listData.activeItem) upd model.items
-                    in
-                        ( { model | items = newItems }, Cmd.none )
+                                newItems =
+                                    List.updateIf (\item -> Just item.item.id == listData.activeItem) upd items
+                            in
+                                ( { model | items = RemoteData.Success newItems }, Cmd.none )
+
+                        _ ->
+                            ( model, Cmd.none )
 
                 _ ->
                     ( model, Cmd.none )
@@ -511,11 +557,16 @@ update action model =
         ToggleLinkRead ->
             case model.route of
                 Routing.ItemList listData ->
-                    case List.find (\item -> Just item.item.id == listData.activeItem) model.items of
-                        Just { item } ->
-                            update (ToggleItemRead item) model
+                    case model.items of
+                        RemoteData.Success items ->
+                            case List.find (\item -> Just item.item.id == listData.activeItem) items of
+                                Just { item } ->
+                                    update (ToggleItemRead item) model
 
-                        Nothing ->
+                                Nothing ->
+                                    ( model, Cmd.none )
+
+                        _ ->
                             ( model, Cmd.none )
 
                 _ ->
@@ -524,11 +575,16 @@ update action model =
         ToggleLinkStarred ->
             case model.route of
                 Routing.ItemList listData ->
-                    case List.find (\item -> Just item.item.id == listData.activeItem) model.items of
-                        Just { item } ->
-                            update (ToggleItemStarred item) model
+                    case model.items of
+                        RemoteData.Success items ->
+                            case List.find (\item -> Just item.item.id == listData.activeItem) items of
+                                Just { item } ->
+                                    update (ToggleItemStarred item) model
 
-                        Nothing ->
+                                Nothing ->
+                                    ( model, Cmd.none )
+
+                        _ ->
                             ( model, Cmd.none )
 
                 _ ->
@@ -545,7 +601,7 @@ update action model =
                     else
                         starItem model item
             in
-                ( { model | items = updateItems item.id upd model.items }, action )
+                ( { model | items = updateItem item.id upd model.items }, action )
 
         ToggleItemRead item ->
             let
@@ -558,7 +614,7 @@ update action model =
                     else
                         markItemUnread model item
             in
-                ( { model | items = updateItems item.id upd model.items }, action )
+                ( { model | items = updateItem item.id upd model.items }, action )
 
         ItemMarkedRead val item ->
             ( model, Cmd.none )
@@ -571,14 +627,14 @@ update action model =
                 upd item =
                     { item | unread = val }
             in
-                ( { model | items = updateItems item.id upd model.items }, Cmd.none )
+                ( { model | items = updateItem item.id upd model.items }, Cmd.none )
 
         MarkingItemStarredFailed val item ->
             let
                 upd item =
                     { item | unread = val }
             in
-                ( { model | items = updateItems item.id upd model.items }, Cmd.none )
+                ( { model | items = updateItem item.id upd model.items }, Cmd.none )
 
         SelectTag tagName ->
             let
@@ -704,7 +760,7 @@ update action model =
                     titleFor model newRoute
 
                 newModel =
-                    { model | title = newTitle, route = newRoute, error = Nothing }
+                    { model | title = newTitle, route = newRoute }
 
                 updateTitle =
                     if newTitle == model.title then
@@ -713,9 +769,9 @@ update action model =
                         [ setTitle newTitle ]
 
                 cmds =
-                    Cmd.batch (updateTitle ++ extraCmds (Just model) newModel)
+                    Cmd.batch updateTitle
             in
-                ( newModel, cmds )
+                extraCmds (Just model) ( newModel, cmds )
 
         NoOp ->
             ( model, Cmd.none )
@@ -849,23 +905,35 @@ unreadBadge model unread =
         span [] []
 
 
-navCollapsible : String -> Html Msg -> (key -> Msg) -> Maybe key -> List ( key, Html Msg ) -> Bool -> Msg -> Html Msg
-navCollapsible widgetId label action activeKey items expanded toggleExpanded =
-    let
-        labelId =
-            widgetId ++ "-label"
+navCollapsible : String -> Html Msg -> (key -> Msg) -> Maybe key -> RemoteData.WebData (List ( key, Html Msg )) -> Bool -> Msg -> Html Msg
+navCollapsible widgetId label action activeKey webItems expanded toggleExpanded =
+    case webItems of
+        RemoteData.NotAsked ->
+            --Debug.crash "Trying to show list and did not ask for data."
+            text "NotAsked"
 
-        item ( key, label ) =
+        RemoteData.Loading ->
+            text "Loading"
+
+        RemoteData.Failure err ->
+            text (toString err)
+
+        RemoteData.Success items ->
             let
-                active =
-                    Just key == activeKey
+                labelId =
+                    widgetId ++ "-label"
+
+                item ( key, label ) =
+                    let
+                        active =
+                            Just key == activeKey
+                    in
+                        ( toString key, li [ onClick (action key), onEnter (action key), classList [ ( "active", active ) ], role Role.MenuItemRadio, ariaChecked (Just (boolToTristate active)) ] [ label ] )
             in
-                ( toString key, li [ onClick (action key), onEnter (action key), classList [ ( "active", active ) ], role Role.MenuItemRadio, ariaChecked (Just (boolToTristate active)) ] [ label ] )
-    in
-        div [ class widgetId ]
-            [ h2 [ id labelId, ariaExpanded (Just expanded), onClick toggleExpanded, onEnter toggleExpanded, tabindex 0 ] [ label ]
-            , Keyed.ul [ role Role.Group, ariaLabelledby [ labelId ], id (widgetId ++ "-content"), classList [ ( "collapsed", not expanded ) ] ] (List.map item items)
-            ]
+                div [ class widgetId ]
+                    [ h2 [ id labelId, ariaExpanded (Just expanded), onClick toggleExpanded, onEnter toggleExpanded, tabindex 0 ] [ label ]
+                    , Keyed.ul [ role Role.Group, ariaLabelledby [ labelId ], id (widgetId ++ "-content"), classList [ ( "collapsed", not expanded ) ] ] (List.map item items)
+                    ]
 
 
 navFilters : Model -> Html Msg
@@ -874,7 +942,7 @@ navFilters model =
         filters =
             let
                 filterLabel ( key, message, stat ) =
-                    ( key, span [] [ text <| translate model.lang message, unreadBadge model (stat model.stats) ] )
+                    ( key, span [] [ text <| translate model.lang message, RemoteData.withDefault (text "") (RemoteData.map (unreadBadge model << stat) model.stats) ] )
             in
                 List.map filterLabel [ ( AllItems, Messages.All, .total ), ( UnreadItems, Messages.Unread, .unread ), ( StarredItems, Messages.Starred, .starred ) ]
 
@@ -890,7 +958,7 @@ navFilters model =
             (text <| translate model.lang Messages.Filters)
             SelectPrimaryFilter
             activePrimaryFilter
-            filters
+            (RemoteData.Success filters)
             model.filtersExpanded
             ToggleFiltersExpanded
 
@@ -925,18 +993,18 @@ navTags model =
                 _ ->
                     NoOp
 
-        tags =
+        tags tags =
             let
                 tagLabel tag =
                     ( OnlyTag tag.tag, span [] [ text tag.tag, unreadBadge model tag.unread, span [ class "tag-color", Html.Attributes.style [ ( "background-color", tag.color ) ] ] [] ] )
             in
-                ( AllTags, text <| translate model.lang Messages.AllTags ) :: List.map tagLabel model.tags
+                ( AllTags, text <| translate model.lang Messages.AllTags ) :: List.map tagLabel tags
     in
         navCollapsible "nav-tags"
             (text <| translate model.lang Messages.Tags)
             toAction
             activeTag
-            tags
+            (RemoteData.map tags model.tags)
             model.tagsExpanded
             ToggleTagsExpanded
 
@@ -957,18 +1025,18 @@ navSources model =
                 _ ->
                     Nothing
 
-        sources =
+        sources sources =
             let
                 sourceLabel source =
                     ( source.id, span [] [ text source.title, unreadBadge model source.unread ] )
             in
-                List.map sourceLabel model.sources
+                List.map sourceLabel sources
     in
         navCollapsible "nav-sources"
             (text <| translate model.lang Messages.Sources)
             SelectSource
             activeSourceId
-            sources
+            (RemoteData.map sources model.sources)
             model.sourcesExpanded
             ToggleSourcesExpanded
 
@@ -982,8 +1050,6 @@ navActions model =
                 , text " "
                 , text <| translate model.lang Messages.Refresh
                 ]
-            , button [ onClick RefreshTags ] [ text <| translate model.lang Messages.RefreshTags ]
-            , button [ onClick RefreshSources ] [ text <| translate model.lang Messages.RefreshSources ]
             ]
 
         languageCombo =
@@ -1122,30 +1188,36 @@ view model =
 
 mainContent : Model -> Html Msg
 mainContent model =
-    if Maybe.isJust model.error then
-        Markdown.toHtml [] (Maybe.withDefault "" model.error)
-    else if model.loading then
-        text <| translate model.lang Messages.Loading
-    else
-        case model.route of
-            Routing.AuthError ->
-                AuthForm.authForm AuthForm model.authForm
+    case model.route of
+        Routing.AuthError ->
+            AuthForm.authForm AuthForm model.authForm
 
-            Routing.ItemList { activeItem } ->
-                if List.isEmpty model.items then
-                    text <| translate model.lang Messages.NoEntries
-                else
-                    let
-                        entries =
-                            List.map (entry model activeItem) model.items
-                    in
-                        div [ class "entries", role Role.Feed ] entries
+        Routing.ItemList { activeItem } ->
+            case model.items of
+                RemoteData.Loading ->
+                    text <| translate model.lang Messages.Loading
 
-            Routing.SourceList ->
-                Html.map SourceList (SourceList.sourceList model.sourceList)
+                RemoteData.NotAsked ->
+                    Debug.crash "Trying to show list of items and did not ask for data."
 
-            Routing.NotFoundRoute ->
-                text <| translate model.lang Messages.NotFound
+                RemoteData.Success items ->
+                    if List.isEmpty items then
+                        text <| translate model.lang Messages.NoEntries
+                    else
+                        let
+                            entries =
+                                List.map (entry model activeItem) items
+                        in
+                            div [ class "entries", role Role.Feed ] entries
+
+                RemoteData.Failure err ->
+                    Markdown.toHtml [] (toString err)
+
+        Routing.SourceList ->
+            Html.map SourceList (SourceList.sourceList model.sourceList)
+
+        Routing.NotFoundRoute ->
+            text <| translate model.lang Messages.NotFound
 
 
 
@@ -1289,14 +1361,16 @@ unstarItem model item =
         )
 
 
-updateItems : Int -> (Item -> Item) -> List DisplayItem -> List DisplayItem
-updateItems itemId upd items =
-    List.map
-        (\item ->
-            if item.item.id == itemId then
-                { item | item = upd item.item }
-            else
-                item
+updateItem : Int -> (Item -> Item) -> RemoteData.WebData (List DisplayItem) -> RemoteData.WebData (List DisplayItem)
+updateItem itemId upd items =
+    RemoteData.map
+        (List.map
+            (\item ->
+                if item.item.id == itemId then
+                    { item | item = upd item.item }
+                else
+                    item
+            )
         )
         items
 
