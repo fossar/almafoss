@@ -249,6 +249,7 @@ routeCmds maybeOldModel model =
                             newCmds =
                                 Cmd.batch
                                     [ Cmd.map SourceList (SourceList.fetchSourceData model.sourceList)
+                                    , Cmd.map SourceList (SourceList.fetchSpouts model.sourceList)
                                     , updateTitle
                                     ]
 

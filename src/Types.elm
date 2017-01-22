@@ -11,6 +11,8 @@ module Types
         , Tag
         , Source
         , SourceData
+        , Spout
+        , SpoutParam
         , Stats
         )
 
@@ -23,7 +25,7 @@ module Types
 @docs FilterPrimary, FilterSecondary, Filter, defaultFilter
 
 ## Feed data
-@docs Item, Tag, Source, SourceData, Stats
+@docs Item, Tag, Source, SourceData, Spout, SpoutParam, Stats
 -}
 
 import Dict exposing (Dict)
@@ -121,6 +123,24 @@ type alias SourceData =
     , error : Maybe String
     , lastentry : Maybe DateTime
     , icon : Maybe String
+    }
+
+
+{-| -}
+type alias Spout =
+    { name : String
+    , description : String
+    , params : Dict String SpoutParam
+    }
+
+
+{-| -}
+type alias SpoutParam =
+    { title : String
+    , class : String
+    , default : String
+    , required : Bool
+    , validation : List String
     }
 
 

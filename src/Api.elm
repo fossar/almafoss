@@ -1,13 +1,13 @@
-module Api exposing (items, sources, tags, stats, markItemRead, markItemUnread, starItem, unstarItem, sourceData, addSource, updateSource, deleteSource, login)
+module Api exposing (items, sources, tags, stats, markItemRead, markItemUnread, starItem, unstarItem, sourceData, addSource, updateSource, deleteSource, spouts, login)
 
 {-| Module handling communication with Selfoss using [REST API][rest-docs].
 
-@docs items, sources, tags, stats, markItemRead, markItemUnread, starItem, unstarItem, sourceData, addSource, updateSource, deleteSource, login
+@docs items, sources, tags, stats, markItemRead, markItemUnread, starItem, unstarItem, sourceData, addSource, updateSource, deleteSource, spouts, login
 
 [rest-docs]: https://github.com/SSilence/selfoss/wiki/Restful-API-for-Apps-or-any-other-external-access
 -}
 
-import Dict
+import Dict exposing (Dict)
 import Http
 import HttpBuilder exposing (..)
 import Json.Decode as Json
@@ -140,6 +140,16 @@ deleteSource { credentials, host } id handler =
         |> send handler
 
 
+{-| Request available spouts.
+-}
+spouts : { model | credentials : Maybe Credentials, host : String } -> (Result Http.Error (Dict String Spout) -> msg) -> Cmd msg
+spouts { credentials, host } handler =
+    HttpBuilder.get (host ++ "/sources/spouts")
+        |> withQueryParams (makeAuth credentials)
+        |> withExpect (Http.expectJson spoutsDecoder)
+        |> send handler
+
+
 {-| Request authentication.
 -}
 login : { model | host : String } -> Credentials -> (Result Http.Error Bool -> msg) -> Cmd msg
@@ -223,6 +233,42 @@ sourceDataDecoder =
                 |> required "icon" (Json.maybe Json.string)
     in
         Json.list sourceDecoder
+
+
+spoutsDecoder : Json.Decoder (Dict String Spout)
+spoutsDecoder =
+    let
+        spoutDecoder =
+            decode Spout
+                |> required "name" Json.string
+                |> required "description" Json.string
+                |> required "params" spoutParamsDecoder
+    in
+        Json.dict spoutDecoder
+
+
+spoutParamsDecoder : Json.Decoder (Dict String SpoutParam)
+spoutParamsDecoder =
+    let
+        validationDecoder =
+            Json.oneOf
+                [ Json.list Json.string
+                , Json.string |> Json.andThen (\_ -> Json.succeed [])
+                ]
+
+        spoutParamDecoder =
+            decode SpoutParam
+                |> required "title" Json.string
+                |> required "type" Json.string
+                |> required "default" Json.string
+                |> required "required" Json.bool
+                |> required "validation" validationDecoder
+    in
+        Json.oneOf
+            [ Json.dict spoutParamDecoder
+            , Json.bool |> Json.andThen (\_ -> Json.succeed Dict.empty)
+            , Json.null Dict.empty
+            ]
 
 
 sourceDataEncoder : SourceData -> Json.Encode.Value

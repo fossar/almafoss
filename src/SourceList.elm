@@ -1,4 +1,4 @@
-module SourceList exposing (Model, Msg(..), init, changeLang, update, sourceList, fetchSourceData)
+module SourceList exposing (Model, Msg(..), init, changeLang, update, sourceList, fetchSourceData, fetchSpouts)
 
 {-| This module takes care of user authentication.
 
@@ -9,19 +9,20 @@ module SourceList exposing (Model, Msg(..), init, changeLang, update, sourceList
 @docs init, changeLang
 
 ## Update
-@docs update, fetchSourceData
+@docs update, fetchSourceData, fetchSpouts
 
 ## View
 @docs sourceList
 -}
 
 import Api
-import Dict
+import Dict exposing (Dict)
 import Html exposing (Html, a, article, button, div, h1, h2, header, img, input, li, nav, span, text, ul)
 import Html.Accessibility exposing (ariaExpanded)
 import Html.Attributes exposing (..)
 import Html.Events exposing (onClick, onInput)
 import Http
+import Kintail.InputWidget as InputWidget
 import List.Extra as List
 import Locale exposing (translate)
 import Localization.Language exposing (Language, nativeName)
@@ -40,6 +41,7 @@ type alias Model =
     , lang : Language
     , credentials : Maybe Credentials
     , data : WebData (List DisplaySourceData)
+    , spouts : WebData (Dict String Spout)
     }
 
 
@@ -97,6 +99,7 @@ type Msg
     | UpdateSourceTags SourceDataId String
     | UpdateSourceSpout SourceDataId String
     | SourceDataResponse (Result Http.Error (List SourceData))
+    | SpoutsResponse (Result Http.Error (Dict String Spout))
     | SourceDataUpdateResponse SourceDataId (Result Http.Error Int)
     | NoOp
 
@@ -111,6 +114,7 @@ init host lang credentials =
             , lang = lang
             , credentials = credentials
             , data = NotAsked
+            , spouts = NotAsked
             }
     in
         ( initialModel, Cmd.none )
@@ -312,6 +316,14 @@ update action model =
                 Err err ->
                     ( { model | data = RemoteData.Failure err }, Cmd.none )
 
+        SpoutsResponse response ->
+            case response of
+                Ok spouts ->
+                    ( { model | spouts = RemoteData.Success spouts }, Cmd.none )
+
+                Err err ->
+                    ( { model | spouts = RemoteData.Failure err }, Cmd.none )
+
         NoOp ->
             ( model, Cmd.none )
 
@@ -352,6 +364,17 @@ sourceData model data =
 
         sourceId =
             data.id
+
+        spouts =
+            RemoteData.withDefault Dict.empty model.spouts
+
+        getSpoutTitle spoutId =
+            case Dict.get spoutId spouts of
+                Just spout ->
+                    spout.name
+
+                Nothing ->
+                    Debug.crash "Trying to get title of non-existent spout."
     in
         article [ id ("source-" ++ sourceIdToString sourceId), classList [ ( "source", True ), ( "open", open ) ], ariaExpanded (Just open) ]
             [ header [ class "source-header" ]
@@ -392,16 +415,16 @@ sourceData model data =
                 )
             , div [ class "source-form source-content" ]
                 [ Html.div [ class "form-group" ]
-                    [ Html.label [ for ("source-form-title" ++ toString sourceId) ] [ text <| translate model.lang Messages.SourceTitle ]
-                    , Html.div [ class "form-control" ] [ input [ id ("source-form-title" ++ toString sourceId), type_ "text", onInput (UpdateSourceTitle sourceId), value modified.title, onEnter (Save sourceId) ] [] ]
+                    [ Html.label [ for ("source-form-title-" ++ sourceIdToString sourceId) ] [ text <| translate model.lang Messages.SourceTitle ]
+                    , Html.div [ class "form-control" ] [ input [ id ("source-form-title-" ++ sourceIdToString sourceId), type_ "text", onInput (UpdateSourceTitle sourceId), value modified.title, onEnter (Save sourceId) ] [] ]
                     ]
                 , Html.div [ class "form-group" ]
-                    [ Html.label [ for ("source-form-tags" ++ toString sourceId) ] [ text <| translate model.lang Messages.SourceTags ]
-                    , Html.div [ class "form-control" ] [ input [ id ("source-form-tags" ++ toString sourceId), type_ "text", onInput (UpdateSourceTags sourceId), value (String.join "," modified.tags), onEnter (Save sourceId) ] [] ]
+                    [ Html.label [ for ("source-form-tags-" ++ sourceIdToString sourceId) ] [ text <| translate model.lang Messages.SourceTags ]
+                    , Html.div [ class "form-control" ] [ input [ id ("source-form-tags-" ++ sourceIdToString sourceId), type_ "text", onInput (UpdateSourceTags sourceId), value (String.join "," modified.tags), onEnter (Save sourceId) ] [] ]
                     ]
                 , Html.div [ class "form-group" ]
-                    [ Html.label [ for ("source-form-spout" ++ toString sourceId) ] [ text <| translate model.lang Messages.SourceSpout ]
-                    , Html.div [ class "form-control" ] [ input [ id ("source-form-spout" ++ toString sourceId), type_ "text", onInput (UpdateSourceSpout sourceId), value modified.spout, onEnter (Save sourceId) ] [] ]
+                    [ Html.label [ for ("source-form-spout-" ++ sourceIdToString sourceId) ] [ text <| translate model.lang Messages.SourceSpout ]
+                    , Html.div [ class "form-control" ] [ InputWidget.comboBox [ id ("source-form-spout-" ++ sourceIdToString sourceId) {- , type_ "text", value modified.spout, onEnter (Save sourceId) -} ] getSpoutTitle (Dict.keys spouts) modified.spout |> Html.map (UpdateSourceSpout sourceId) ]
                     ]
                 ]
             , sourceDataPanel model sourceId
@@ -431,6 +454,14 @@ fetchSourceData model =
     Api.sourceData
         model
         SourceDataResponse
+
+
+{-| -}
+fetchSpouts : Model -> Cmd Msg
+fetchSpouts model =
+    Api.spouts
+        model
+        SpoutsResponse
 
 
 updateSourceData : Model -> SourceDataId -> SourceData -> Cmd Msg
