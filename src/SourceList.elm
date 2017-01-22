@@ -140,7 +140,7 @@ update action model =
                             { id = 0
                             , title = ""
                             , tags = []
-                            , spout = ""
+                            , spout = "spouts\\rss\\feed"
                             , params = Dict.empty
                             , error = Nothing
                             , lastentry = Nothing
@@ -261,25 +261,7 @@ update action model =
         Save sourceId ->
             case model.data of
                 RemoteData.Success data ->
-                    let
-                        upd source =
-                            { source | open = False, source = source.modified }
-
-                        newData =
-                            List.updateIf (\source -> source.id == sourceId) upd data
-
-                        source =
-                            case List.find (\source -> source.id == sourceId) newData of
-                                Just source ->
-                                    source
-
-                                Nothing ->
-                                    Debug.crash "Trying to save non-existent source."
-
-                        newModel =
-                            { model | data = RemoteData.Success newData }
-                    in
-                        ( newModel, updateSourceData newModel sourceId source.source )
+                    ( model, updateSourceData model sourceId )
 
                 _ ->
                     ( model, Cmd.none )
@@ -291,7 +273,14 @@ update action model =
                         Ok newId ->
                             let
                                 upd source =
-                                    { source | id = Saved newId }
+                                    let
+                                        oldData =
+                                            source.modified
+
+                                        newData =
+                                            { oldData | id = newId }
+                                    in
+                                        { source | id = Saved newId, source = newData, modified = newData }
 
                                 newData =
                                     List.updateIf (\source -> source.id == originalId) upd data
@@ -467,19 +456,32 @@ fetchSpouts model =
         SpoutsResponse
 
 
-updateSourceData : Model -> SourceDataId -> SourceData -> Cmd Msg
-updateSourceData model originalId data =
-    let
-        call : Model -> SourceData -> (Result Http.Error Int -> Msg) -> Cmd Msg
-        call =
-            case originalId of
-                Temporary id ->
-                    Api.addSource
+updateSourceData : Model -> SourceDataId -> Cmd Msg
+updateSourceData model originalId =
+    model.data
+        |> RemoteData.map
+            (\data ->
+                let
+                    source =
+                        case List.find (\source -> source.id == originalId) data of
+                            Just source ->
+                                source
 
-                Saved id ->
-                    Api.updateSource
-    in
-        call
-            model
-            data
-            (SourceDataUpdateResponse originalId)
+                            Nothing ->
+                                Debug.crash "Trying to save non-existent source."
+
+                    call : Model -> SourceData -> (Result Http.Error Int -> Msg) -> Cmd Msg
+                    call =
+                        case originalId of
+                            Temporary id ->
+                                Api.addSource
+
+                            Saved id ->
+                                Api.updateSource
+                in
+                    call
+                        model
+                        source.modified
+                        (SourceDataUpdateResponse originalId)
+            )
+        |> RemoteData.withDefault Cmd.none

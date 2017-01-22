@@ -221,13 +221,26 @@ sourcesDecoder =
 sourceDataDecoder : Json.Decoder (List SourceData)
 sourceDataDecoder =
     let
+        spoutParamsDecoder =
+            Json.oneOf
+                [ Json.dict (Json.maybe Json.string)
+                , Json.list Json.value
+                    |> Json.andThen
+                        (\l ->
+                            if List.isEmpty l then
+                                Json.succeed Dict.empty
+                            else
+                                Json.fail "Expected empty array as params"
+                        )
+                ]
+
         sourceDecoder =
             decode SourceData
                 |> required "id" intString
                 |> required "title" Json.string
                 |> required "tags" tagListDecoder
                 |> required "spout" Json.string
-                |> required "params" (Json.dict (Json.maybe Json.string))
+                |> required "params" spoutParamsDecoder
                 |> required "error" maybeString
                 |> required "lastentry" (Json.maybe datetime)
                 |> required "icon" (Json.maybe Json.string)
@@ -253,7 +266,14 @@ spoutParamsDecoder =
         validationDecoder =
             Json.oneOf
                 [ Json.list Json.string
-                , Json.string |> Json.andThen (\_ -> Json.succeed [])
+                , Json.string
+                    |> Json.andThen
+                        (\s ->
+                            if String.isEmpty s then
+                                Json.succeed []
+                            else
+                                Json.fail "Expected empty string as validation"
+                        )
                 ]
 
         spoutParamDecoder =
@@ -266,19 +286,38 @@ spoutParamsDecoder =
     in
         Json.oneOf
             [ Json.dict spoutParamDecoder
-            , Json.bool |> Json.andThen (\_ -> Json.succeed Dict.empty)
-            , Json.null Dict.empty
+            , Json.list Json.value
+                |> Json.andThen
+                    (\l ->
+                        if List.isEmpty l then
+                            Json.succeed Dict.empty
+                        else
+                            Json.fail "Expected empty array as params"
+                    )
+            , Json.bool
+                |> Json.andThen
+                    (\b ->
+                        if not b then
+                            Json.succeed Dict.empty
+                        else
+                            Json.fail "Expected false as params"
+                    )
             ]
 
 
 sourceDataEncoder : SourceData -> Json.Encode.Value
 sourceDataEncoder data =
-    Json.Encode.object
-        [ ( "title", Json.Encode.string data.title )
-        , ( "tags", tagsEncoder data.tags )
-        , ( "spout", Json.Encode.string data.spout )
-        , ( "params", Json.Encode.object (Dict.toList (Dict.map (\_ val -> Maybe.withDefault Json.Encode.null (Maybe.map Json.Encode.string val)) data.params)) )
-        ]
+    let
+        basic =
+            [ ( "title", Json.Encode.string data.title )
+            , ( "tags", tagsEncoder data.tags )
+            , ( "spout", Json.Encode.string data.spout )
+            ]
+
+        params =
+            Dict.toList (Dict.map (\_ val -> Maybe.withDefault Json.Encode.null (Maybe.map Json.Encode.string val)) data.params)
+    in
+        Json.Encode.object (basic ++ params)
 
 
 tagsDecoder : Json.Decoder (List Tag)
