@@ -50,7 +50,6 @@ type alias DisplayItem =
 type alias Model =
     { host : String
     , lang : Language
-    , title : String
     , error : Maybe String
     , items : RemoteData.WebData (List DisplayItem)
     , tags : RemoteData.WebData (List Tag)
@@ -103,7 +102,6 @@ init { host } location =
         initialModel =
             { host = host
             , lang = lang
-            , title = "álmafoss"
             , error = Nothing
             , items = RemoteData.NotAsked
             , tags = RemoteData.NotAsked
@@ -119,7 +117,7 @@ init { host } location =
             , route = currentRoute
             }
     in
-        extraCmds Nothing ( initialModel, Cmd.none )
+        routeCmds Nothing initialModel
 
 
 
@@ -172,8 +170,8 @@ setTitle title =
     Task.perform (always NoOp) (Document.title title)
 
 
-extraCmds : Maybe Model -> ( Model, Cmd Msg ) -> ( Model, Cmd Msg )
-extraCmds maybeOldModel ( model, cmds ) =
+routeCmds : Maybe Model -> Model -> ( Model, Cmd Msg )
+routeCmds maybeOldModel model =
     let
         stripActiveId route =
             case route of
@@ -192,61 +190,85 @@ extraCmds maybeOldModel ( model, cmds ) =
                     False
     in
         if routeUnchanged then
-            ( model, cmds )
+            ( model, Cmd.none )
         else
-            case model.route of
-                Routing.AuthError ->
-                    let
-                        focusUsername =
-                            Task.attempt (always NoOp) (Dom.focus "auth-form-username")
+            let
+                updateTitle =
+                    setTitle (titleFor model model.route)
+            in
+                case model.route of
+                    Routing.AuthError ->
+                        let
+                            focusUsername =
+                                Task.attempt (always NoOp) (Dom.focus "auth-form-username")
 
-                        newCmds =
-                            Cmd.batch [ focusUsername, cmds ]
-                    in
-                        ( model, newCmds )
+                            newCmds =
+                                Cmd.batch
+                                    [ focusUsername
+                                    , updateTitle
+                                    ]
+                        in
+                            ( model, newCmds )
 
-                Routing.ItemList _ ->
-                    let
-                        newCmds =
-                            Cmd.batch
-                                [ fetchItems model
-                                , fetchTags model
-                                , fetchSources model
-                                , fetchStats model
-                                , cmds
-                                ]
+                    Routing.ItemList _ ->
+                        if Maybe.isJust maybeOldModel then
+                            let
+                                newCmds =
+                                    Cmd.batch
+                                        [ fetchItems model
+                                        , updateTitle
+                                        ]
 
-                        newModel =
-                            { model
-                                | items = RemoteData.Loading
-                                , tags = RemoteData.Loading
-                                , sources = RemoteData.Loading
-                                , stats = RemoteData.Loading
-                            }
-                    in
-                        ( newModel, newCmds )
+                                newModel =
+                                    { model | items = RemoteData.Loading }
+                            in
+                                ( newModel, newCmds )
+                        else
+                            let
+                                newCmds =
+                                    Cmd.batch
+                                        [ fetchItems model
+                                        , fetchTags model
+                                        , fetchSources model
+                                        , fetchStats model
+                                        , updateTitle
+                                        ]
 
-                Routing.SourceList ->
-                    let
-                        newCmds =
-                            Cmd.batch
-                                [ Cmd.map SourceList (SourceList.fetchSourceData model.sourceList)
-                                , cmds
-                                ]
+                                newModel =
+                                    { model
+                                        | items = RemoteData.Loading
+                                        , tags = RemoteData.Loading
+                                        , sources = RemoteData.Loading
+                                        , stats = RemoteData.Loading
+                                    }
+                            in
+                                ( newModel, newCmds )
 
-                        sourceList =
-                            model.sourceList
+                    Routing.SourceList ->
+                        let
+                            newCmds =
+                                Cmd.batch
+                                    [ Cmd.map SourceList (SourceList.fetchSourceData model.sourceList)
+                                    , updateTitle
+                                    ]
 
-                        newSourceList =
-                            { sourceList | data = RemoteData.Loading }
+                            sourceList =
+                                model.sourceList
 
-                        newModel =
-                            { model | sourceList = newSourceList }
-                    in
-                        ( newModel, newCmds )
+                            newSourceList =
+                                { sourceList | data = RemoteData.Loading }
 
-                _ ->
-                    ( model, cmds )
+                            newModel =
+                                { model | sourceList = newSourceList }
+                        in
+                            ( newModel, newCmds )
+
+                    Routing.NotFoundRoute ->
+                        let
+                            newCmds =
+                                updateTitle
+                        in
+                            ( model, newCmds )
 
 
 update : Msg -> Model -> ( Model, Cmd Msg )
@@ -649,11 +671,8 @@ update action model =
 
                         _ ->
                             defaultFilter
-
-                newModel =
-                    changeFilter newFilter model
             in
-                update (ShowItemList newFilter) newModel
+                update (ShowItemList newFilter) model
 
         SelectAllTags ->
             let
@@ -668,11 +687,8 @@ update action model =
 
                         _ ->
                             defaultFilter
-
-                newModel =
-                    changeFilter newFilter model
             in
-                update (ShowItemList newFilter) newModel
+                update (ShowItemList newFilter) model
 
         SelectSource sourceId ->
             let
@@ -687,11 +703,8 @@ update action model =
 
                         _ ->
                             defaultFilter
-
-                newModel =
-                    changeFilter newFilter model
             in
-                update (ShowItemList newFilter) newModel
+                update (ShowItemList newFilter) model
 
         SelectPrimaryFilter filter ->
             let
@@ -706,11 +719,8 @@ update action model =
 
                         _ ->
                             defaultFilter
-
-                newModel =
-                    changeFilter newFilter model
             in
-                update (ShowItemList newFilter) newModel
+                update (ShowItemList newFilter) model
 
         AuthForm msg ->
             let
@@ -756,22 +766,10 @@ update action model =
                 newRoute =
                     Routing.parseLocation location
 
-                newTitle =
-                    titleFor model newRoute
-
                 newModel =
-                    { model | title = newTitle, route = newRoute }
-
-                updateTitle =
-                    if newTitle == model.title then
-                        []
-                    else
-                        [ setTitle newTitle ]
-
-                cmds =
-                    Cmd.batch updateTitle
+                    { model | route = newRoute }
             in
-                extraCmds (Just model) ( newModel, cmds )
+                routeCmds (Just model) newModel
 
         NoOp ->
             ( model, Cmd.none )
@@ -1373,17 +1371,3 @@ updateItem itemId upd items =
             )
         )
         items
-
-
-changeFilter : Filter -> Model -> Model
-changeFilter filter model =
-    case model.route of
-        Routing.ItemList listData ->
-            let
-                newRoute =
-                    Routing.ItemList { listData | filter = filter }
-            in
-                { model | route = newRoute }
-
-        _ ->
-            model
