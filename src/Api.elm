@@ -224,14 +224,7 @@ sourceDataDecoder =
         spoutParamsDecoder =
             Json.oneOf
                 [ Json.dict (Json.maybe Json.string)
-                , Json.list Json.value
-                    |> Json.andThen
-                        (\l ->
-                            if List.isEmpty l then
-                                Json.succeed Dict.empty
-                            else
-                                Json.fail "Expected empty array as params"
-                        )
+                , expect (Json.list Json.value) [] Dict.empty
                 ]
 
         sourceDecoder =
@@ -266,14 +259,7 @@ spoutParamsDecoder =
         validationDecoder =
             Json.oneOf
                 [ Json.list Json.string
-                , Json.string
-                    |> Json.andThen
-                        (\s ->
-                            if String.isEmpty s then
-                                Json.succeed []
-                            else
-                                Json.fail "Expected empty string as validation"
-                        )
+                , expect Json.string "" []
                 ]
 
         spoutParamDecoder =
@@ -286,22 +272,8 @@ spoutParamsDecoder =
     in
         Json.oneOf
             [ Json.dict spoutParamDecoder
-            , Json.list Json.value
-                |> Json.andThen
-                    (\l ->
-                        if List.isEmpty l then
-                            Json.succeed Dict.empty
-                        else
-                            Json.fail "Expected empty array as params"
-                    )
-            , Json.bool
-                |> Json.andThen
-                    (\b ->
-                        if not b then
-                            Json.succeed Dict.empty
-                        else
-                            Json.fail "Expected false as params"
-                    )
+            , expect (Json.list Json.value) [] Dict.empty
+            , expect Json.bool False Dict.empty
             ]
 
 
@@ -436,7 +408,7 @@ fakeBool =
                         Json.succeed False
 
                     _ ->
-                        Json.fail ("Expecting either \"0\" or \"1\", " ++ b ++ " given.")
+                        Json.fail ("Expected either \"0\" or \"1\" but instead got " ++ b)
             )
 
 
@@ -446,6 +418,20 @@ intString : Json.Decoder Int
 intString =
     Json.string
         |> Json.andThen (\i -> resultToJson <| String.toInt i)
+
+
+{-| Decode specified value if decoder matches expected value.
+-}
+expect : Json.Decoder expected -> expected -> returned -> Json.Decoder returned
+expect decoder expected returned =
+    decoder
+        |> Json.andThen
+            (\v ->
+                if v == expected then
+                    Json.succeed returned
+                else
+                    Json.fail ("Expected " ++ toString expected ++ " but instead got: " ++ toString v)
+            )
 
 
 {-| Decode float written as string.

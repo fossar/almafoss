@@ -1,19 +1,28 @@
-module Routing exposing (Route(..), parseLocation, link)
+module Routing exposing (Route(..), ItemListState, parseLocation, link, routesEqual)
 
 {-| This module defines the type representing route and provides functions for converting the location to route and vice versa.
 
-@docs Route, parseLocation, link
+@docs Route, ItemListState, parseLocation, link, routesEqual
 -}
 
 import Navigation exposing (Location)
 import Http
+import RemoteData
 import Types exposing (..)
 import UrlParser exposing (..)
 
 
 {-| -}
+type alias ItemListState =
+    { activeItem : Maybe Int
+    , filter : Filter
+    , items : RemoteData.WebData (List DisplayItem)
+    }
+
+
+{-| -}
 type Route
-    = ItemList { activeItem : Maybe Int, filter : Filter }
+    = ItemList ItemListState
     | SourceList
     | AuthError
     | NotFoundRoute
@@ -34,15 +43,12 @@ parseLocation location =
 matchers : UrlParser.Parser (Route -> a) a
 matchers =
     UrlParser.oneOf
-        [ UrlParser.map (ItemList { activeItem = Nothing, filter = defaultFilter }) UrlParser.top
+        [ UrlParser.map (ItemList { activeItem = Nothing, filter = defaultFilter, items = RemoteData.NotAsked }) UrlParser.top
         , UrlParser.map AuthError (UrlParser.s "auth")
         , UrlParser.map SourceList (UrlParser.s "sources")
-        , UrlParser.map (\primary tagName -> ItemList { activeItem = Nothing, filter = { primary = primary, secondary = OnlyTag (Maybe.withDefault "" <| Http.decodeUri tagName) } }) (primaryFilter </> UrlParser.s "tag" </> UrlParser.string)
-        , UrlParser.map (\primary sourceId -> ItemList { activeItem = Nothing, filter = { primary = primary, secondary = OnlySource sourceId } }) (primaryFilter </> UrlParser.s "source" </> UrlParser.int)
-        , UrlParser.map (\primary -> ItemList { activeItem = Nothing, filter = { primary = primary, secondary = AllTags } }) (primaryFilter </> UrlParser.s "all")
-        , UrlParser.map (\primary tagName activeItem -> ItemList { activeItem = Just activeItem, filter = { primary = primary, secondary = OnlyTag (Maybe.withDefault "" <| Http.decodeUri tagName) } }) (primaryFilter </> UrlParser.s "tag" </> UrlParser.string </> UrlParser.int)
-        , UrlParser.map (\primary sourceId activeItem -> ItemList { activeItem = Just activeItem, filter = { primary = primary, secondary = OnlySource sourceId } }) (primaryFilter </> UrlParser.s "source" </> UrlParser.int </> UrlParser.int)
-        , UrlParser.map (\primary activeItem -> ItemList { activeItem = Just activeItem, filter = { primary = primary, secondary = AllTags } }) (primaryFilter </> UrlParser.s "all" </> UrlParser.int)
+        , UrlParser.map (\primary tagName -> ItemList { activeItem = Nothing, filter = { primary = primary, secondary = OnlyTag (Maybe.withDefault "" <| Http.decodeUri tagName) }, items = RemoteData.NotAsked }) (primaryFilter </> UrlParser.s "tag" </> UrlParser.string)
+        , UrlParser.map (\primary sourceId -> ItemList { activeItem = Nothing, filter = { primary = primary, secondary = OnlySource sourceId }, items = RemoteData.NotAsked }) (primaryFilter </> UrlParser.s "source" </> UrlParser.int)
+        , UrlParser.map (\primary -> ItemList { activeItem = Nothing, filter = { primary = primary, secondary = AllTags }, items = RemoteData.NotAsked }) (primaryFilter </> UrlParser.s "all")
         ]
 
 
@@ -93,16 +99,8 @@ link route =
 
                         OnlyTag tagName ->
                             "tag/" ++ Http.encodeUri tagName
-
-                active =
-                    case activeItem of
-                        Just activeId ->
-                            "/" ++ toString activeId
-
-                        Nothing ->
-                            ""
             in
-                "#" ++ primary ++ "/" ++ secondary ++ active
+                "#" ++ primary ++ "/" ++ secondary
 
         SourceList ->
             "#sources"
@@ -112,3 +110,21 @@ link route =
 
         NotFoundRoute ->
             "#404"
+
+
+{-| Test routes for equality.
+
+Ignores internal state stored in the route.
+-}
+routesEqual : Route -> Route -> Bool
+routesEqual a b =
+    let
+        stripState route =
+            case route of
+                ItemList listData ->
+                    ItemList { listData | activeItem = Nothing, items = RemoteData.NotAsked }
+
+                _ ->
+                    route
+    in
+        stripState a == stripState b

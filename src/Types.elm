@@ -8,12 +8,14 @@ module Types
         , Filter
         , defaultFilter
         , Item
+        , DisplayItem
         , Tag
         , Source
         , SourceData
         , Spout
         , SpoutParam
         , Stats
+        , Mapper
         )
 
 {-| Common types and aliases.
@@ -25,7 +27,10 @@ module Types
 @docs FilterPrimary, FilterSecondary, Filter, defaultFilter
 
 ## Feed data
-@docs Item, Tag, Source, SourceData, Spout, SpoutParam, Stats
+@docs Item, DisplayItem, Tag, Source, SourceData, Spout, SpoutParam, Stats
+
+## Other
+@docs Mapper
 -}
 
 import Dict exposing (Dict)
@@ -98,6 +103,13 @@ type alias Item =
 
 
 {-| -}
+type alias DisplayItem =
+    { item : Item
+    , open : Bool
+    }
+
+
+{-| -}
 type alias Tag =
     { tag : String
     , color : String
@@ -150,3 +162,8 @@ type alias Stats =
     , unread : Int
     , starred : Int
     }
+
+
+{-| -}
+type alias Mapper a b =
+    (b -> b) -> a -> a

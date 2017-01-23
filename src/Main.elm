@@ -41,16 +41,9 @@ type alias Flags =
     }
 
 
-type alias DisplayItem =
-    { item : Item
-    , open : Bool
-    }
-
-
 type alias Model =
     { host : String
     , lang : Language
-    , items : RemoteData.WebData (List DisplayItem)
     , tags : RemoteData.WebData (List Tag)
     , sources : RemoteData.WebData (List Source)
     , sourceList : SourceList.Model
@@ -83,7 +76,7 @@ main =
 
 initialRoute : Routing.Route
 initialRoute =
-    Routing.ItemList { activeItem = Nothing, filter = defaultFilter }
+    Routing.ItemList { activeItem = Nothing, filter = defaultFilter, items = RemoteData.NotAsked }
 
 
 init : Flags -> Location -> ( Model, Cmd Msg )
@@ -101,7 +94,6 @@ init { host } location =
         initialModel =
             { host = host
             , lang = lang
-            , items = RemoteData.NotAsked
             , tags = RemoteData.NotAsked
             , sources = RemoteData.NotAsked
             , sourceList = sourceListModel
@@ -170,18 +162,10 @@ setTitle title =
 routeCmds : Maybe Model -> Model -> ( Model, Cmd Msg )
 routeCmds maybeOldModel model =
     let
-        stripActiveId route =
-            case route of
-                Routing.ItemList listData ->
-                    Routing.ItemList { listData | activeItem = Nothing }
-
-                _ ->
-                    route
-
         routeUnchanged =
             case maybeOldModel of
                 Just oldModel ->
-                    stripActiveId oldModel.route == stripActiveId model.route
+                    Routing.routesEqual oldModel.route model.route
 
                 Nothing ->
                     False
@@ -207,7 +191,7 @@ routeCmds maybeOldModel model =
                         in
                             ( model, newCmds )
 
-                    Routing.ItemList _ ->
+                    Routing.ItemList itemData ->
                         if Maybe.isJust maybeOldModel then
                             let
                                 newCmds =
@@ -217,7 +201,8 @@ routeCmds maybeOldModel model =
                                         ]
 
                                 newModel =
-                                    { model | items = RemoteData.Loading }
+                                    model
+                                        |> setItemListItems RemoteData.Loading
                             in
                                 ( newModel, newCmds )
                         else
@@ -232,12 +217,11 @@ routeCmds maybeOldModel model =
                                         ]
 
                                 newModel =
-                                    { model
-                                        | items = RemoteData.Loading
-                                        , tags = RemoteData.Loading
-                                        , sources = RemoteData.Loading
-                                        , stats = RemoteData.Loading
-                                    }
+                                    model
+                                        |> setItemListItems RemoteData.Loading
+                                        |> setTags RemoteData.Loading
+                                        |> setSources RemoteData.Loading
+                                        |> setStats RemoteData.Loading
                             in
                                 ( newModel, newCmds )
 
@@ -273,7 +257,7 @@ update : Msg -> Model -> ( Model, Cmd Msg )
 update action model =
     case action of
         Refresh ->
-            ( { model | items = RemoteData.Loading }, fetchItems model )
+            ( setItemListItems RemoteData.Loading model, fetchItems model )
 
         ItemsResponse result ->
             case result of
@@ -282,34 +266,34 @@ update action model =
                         newItems =
                             (List.map (\item -> { item = item, open = False }) entries)
                     in
-                        ( { model | items = RemoteData.Success newItems }, Cmd.none )
+                        ( setItemListItems (RemoteData.Success newItems) model, Cmd.none )
 
                 Err err ->
-                    ( { model | items = RemoteData.Failure err }, Cmd.none )
+                    ( setItemListItems (RemoteData.Failure err) model, Cmd.none )
 
         TagsResponse result ->
             case result of
                 Ok tags ->
-                    ( { model | tags = RemoteData.Success tags }, Cmd.none )
+                    ( setTags (RemoteData.Success tags) model, Cmd.none )
 
                 Err err ->
-                    ( { model | tags = RemoteData.Failure err }, Cmd.none )
+                    ( setTags (RemoteData.Failure err) model, Cmd.none )
 
         SourcesResponse result ->
             case result of
                 Ok sources ->
-                    ( { model | sources = RemoteData.Success sources }, Cmd.none )
+                    ( setSources (RemoteData.Success sources) model, Cmd.none )
 
                 Err err ->
-                    ( { model | sources = RemoteData.Failure err }, Cmd.none )
+                    ( setSources (RemoteData.Failure err) model, Cmd.none )
 
         StatsResponse result ->
             case result of
                 Ok stats ->
-                    ( { model | stats = RemoteData.Success stats }, Cmd.none )
+                    ( setStats (RemoteData.Success stats) model, Cmd.none )
 
                 Err err ->
-                    ( { model | stats = RemoteData.Failure err }, Cmd.none )
+                    ( setStats (RemoteData.Failure err) model, Cmd.none )
 
         Authenticate ->
             ( model, Navigation.newUrl <| Routing.link Routing.AuthError )
@@ -320,7 +304,7 @@ update action model =
         ShowItemList filter ->
             let
                 cmd =
-                    Navigation.newUrl <| Routing.link (Routing.ItemList { activeItem = Nothing, filter = filter })
+                    Navigation.newUrl <| Routing.link (Routing.ItemList { activeItem = Nothing, filter = filter, items = RemoteData.NotAsked })
             in
                 ( model, cmd )
 
@@ -334,9 +318,7 @@ update action model =
         AuthForm (AuthForm.AuthSucceeded credentials) ->
             let
                 newModel =
-                    { model
-                        | credentials = Just credentials
-                    }
+                    { model | credentials = Just credentials }
 
                 cmd =
                     Navigation.newUrl <| Routing.link initialRoute
@@ -346,7 +328,7 @@ update action model =
         OpenLink ->
             case model.route of
                 Routing.ItemList listData ->
-                    case model.items of
+                    case listData.items of
                         RemoteData.Success items ->
                             let
                                 openCmd =
@@ -379,7 +361,7 @@ update action model =
         SelectPrevious ->
             case model.route of
                 Routing.ItemList listData ->
-                    case model.items of
+                    case listData.items of
                         RemoteData.Success items ->
                             let
                                 previousItem =
@@ -411,7 +393,7 @@ update action model =
         SelectNext ->
             case model.route of
                 Routing.ItemList listData ->
-                    case model.items of
+                    case listData.items of
                         RemoteData.Success items ->
                             let
                                 nextItem =
@@ -443,7 +425,7 @@ update action model =
         ActivatePrevious ->
             case model.route of
                 Routing.ItemList listData ->
-                    case model.items of
+                    case listData.items of
                         RemoteData.Success items ->
                             let
                                 previousItem =
@@ -470,13 +452,12 @@ update action model =
                                                     item
                                             )
 
-                                cmds =
-                                    Cmd.batch
-                                        [ Navigation.newUrl <| Routing.link (Routing.ItemList { listData | activeItem = previousItem })
-                                        , scrollCmd
-                                        ]
+                                newModel =
+                                    model
+                                        |> setItemListItems (RemoteData.Success newItems)
+                                        |> setItemListActiveItem previousItem
                             in
-                                ( { model | items = RemoteData.Success newItems }, cmds )
+                                ( newModel, scrollCmd )
 
                         _ ->
                             ( model, Cmd.none )
@@ -487,7 +468,7 @@ update action model =
         ActivateNext ->
             case model.route of
                 Routing.ItemList listData ->
-                    case model.items of
+                    case listData.items of
                         RemoteData.Success items ->
                             let
                                 nextItem =
@@ -514,13 +495,12 @@ update action model =
                                                     item
                                             )
 
-                                cmds =
-                                    Cmd.batch
-                                        [ Navigation.newUrl <| Routing.link (Routing.ItemList { listData | activeItem = nextItem })
-                                        , scrollCmd
-                                        ]
+                                newModel =
+                                    model
+                                        |> setItemListItems (RemoteData.Success newItems)
+                                        |> setItemListActiveItem nextItem
                             in
-                                ( { model | items = RemoteData.Success newItems }, cmds )
+                                ( newModel, scrollCmd )
 
                         _ ->
                             ( model, Cmd.none )
@@ -531,7 +511,7 @@ update action model =
         ActivateEntry itemId ->
             case model.route of
                 Routing.ItemList listData ->
-                    case model.items of
+                    case listData.items of
                         RemoteData.Success items ->
                             let
                                 newItems =
@@ -544,12 +524,12 @@ update action model =
                                                     item
                                             )
 
-                                cmds =
-                                    Cmd.batch
-                                        [ Navigation.newUrl <| Routing.link (Routing.ItemList { listData | activeItem = itemId })
-                                        ]
+                                newModel =
+                                    model
+                                        |> setItemListItems (RemoteData.Success newItems)
+                                        |> setItemListActiveItem itemId
                             in
-                                ( { model | items = RemoteData.Success newItems }, cmds )
+                                ( newModel, Cmd.none )
 
                         _ ->
                             ( model, Cmd.none )
@@ -560,7 +540,7 @@ update action model =
         ToggleLinkOpen ->
             case model.route of
                 Routing.ItemList listData ->
-                    case model.items of
+                    case listData.items of
                         RemoteData.Success items ->
                             let
                                 upd item =
@@ -568,8 +548,12 @@ update action model =
 
                                 newItems =
                                     List.updateIf (\item -> Just item.item.id == listData.activeItem) upd items
+
+                                newModel =
+                                    model
+                                        |> setItemListItems (RemoteData.Success newItems)
                             in
-                                ( { model | items = RemoteData.Success newItems }, Cmd.none )
+                                ( newModel, Cmd.none )
 
                         _ ->
                             ( model, Cmd.none )
@@ -580,7 +564,7 @@ update action model =
         ToggleLinkRead ->
             case model.route of
                 Routing.ItemList listData ->
-                    case model.items of
+                    case listData.items of
                         RemoteData.Success items ->
                             case List.find (\item -> Just item.item.id == listData.activeItem) items of
                                 Just { item } ->
@@ -598,7 +582,7 @@ update action model =
         ToggleLinkStarred ->
             case model.route of
                 Routing.ItemList listData ->
-                    case model.items of
+                    case listData.items of
                         RemoteData.Success items ->
                             case List.find (\item -> Just item.item.id == listData.activeItem) items of
                                 Just { item } ->
@@ -624,7 +608,7 @@ update action model =
                     else
                         starItem model item
             in
-                ( { model | items = updateItem item.id upd model.items }, action )
+                ( updateItem item.id upd model, action )
 
         ToggleItemRead item ->
             let
@@ -637,7 +621,7 @@ update action model =
                     else
                         markItemUnread model item
             in
-                ( { model | items = updateItem item.id upd model.items }, action )
+                ( updateItem item.id upd model, action )
 
         ItemMarkedRead val item ->
             ( model, Cmd.none )
@@ -650,14 +634,14 @@ update action model =
                 upd item =
                     { item | unread = val }
             in
-                ( { model | items = updateItem item.id upd model.items }, Cmd.none )
+                ( updateItem item.id upd model, Cmd.none )
 
         MarkingItemStarredFailed val item ->
             let
                 upd item =
                     { item | unread = val }
             in
-                ( { model | items = updateItem item.id upd model.items }, Cmd.none )
+                ( updateItem item.id upd model, Cmd.none )
 
         SelectTag tagName ->
             let
@@ -1191,8 +1175,8 @@ mainContent model =
         Routing.AuthError ->
             AuthForm.authForm AuthForm model.authForm
 
-        Routing.ItemList { activeItem } ->
-            case model.items of
+        Routing.ItemList listData ->
+            case listData.items of
                 RemoteData.Loading ->
                     text <| translate model.lang Messages.Loading
 
@@ -1205,7 +1189,7 @@ mainContent model =
                     else
                         let
                             entries =
-                                List.map (entry model activeItem) items
+                                List.map (entry model listData.activeItem) items
                         in
                             div [ class "entries", role Role.Feed ] entries
 
@@ -1236,6 +1220,70 @@ subscriptions model =
     Sub.batch
         [ Kbd.subscriptions model.combos
         ]
+
+
+
+-- SETTERS
+
+
+setSources : RemoteData.WebData (List Source) -> Model -> Model
+setSources sources model =
+    { model | sources = sources }
+
+
+setTags : RemoteData.WebData (List Tag) -> Model -> Model
+setTags tags model =
+    { model | tags = tags }
+
+
+setStats : RemoteData.WebData Stats -> Model -> Model
+setStats stats model =
+    { model | stats = stats }
+
+
+setItemListItems : RemoteData.WebData (List DisplayItem) -> Model -> Model
+setItemListItems items =
+    mapItemListItems (always items)
+
+
+setItemListActiveItem : Maybe Int -> Model -> Model
+setItemListActiveItem activeItem =
+    mapItemListActiveItem (always activeItem)
+
+
+mapRoute : Mapper Model Routing.Route
+mapRoute f data =
+    { data | route = f data.route }
+
+
+mapItemListState : Mapper Routing.Route Routing.ItemListState
+mapItemListState f data =
+    case data of
+        Routing.ItemList listData ->
+            Routing.ItemList (f listData)
+
+        _ ->
+            data
+
+
+mapItems : Mapper Routing.ItemListState (RemoteData.WebData (List DisplayItem))
+mapItems f data =
+    { data | items = f data.items }
+
+
+mapActiveItem : Mapper Routing.ItemListState (Maybe Int)
+mapActiveItem f data =
+    { data | activeItem = f data.activeItem }
+
+
+mapItemListItems : Mapper Model (RemoteData.WebData (List DisplayItem))
+mapItemListItems =
+    mapRoute << mapItemListState << mapItems
+
+
+mapItemListActiveItem : Mapper Model (Maybe Int)
+mapItemListActiveItem =
+    mapRoute << mapItemListState << mapActiveItem
 
 
 
@@ -1340,15 +1388,16 @@ unstarItem model item =
         )
 
 
-updateItem : Int -> (Item -> Item) -> RemoteData.WebData (List DisplayItem) -> RemoteData.WebData (List DisplayItem)
-updateItem itemId upd items =
-    RemoteData.map
-        (List.map
-            (\item ->
-                if item.item.id == itemId then
-                    { item | item = upd item.item }
-                else
-                    item
+updateItem : Int -> (Item -> Item) -> Model -> Model
+updateItem itemId upd =
+    mapItemListItems
+        (RemoteData.map
+            (List.map
+                (\item ->
+                    if item.item.id == itemId then
+                        { item | item = upd item.item }
+                    else
+                        item
+                )
             )
         )
-        items
