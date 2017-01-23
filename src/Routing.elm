@@ -8,6 +8,7 @@ module Routing exposing (Route(..), ItemListState, parseLocation, link, routesEq
 import Navigation exposing (Location)
 import Http
 import RemoteData
+import SourceList
 import Types exposing (..)
 import UrlParser exposing (..)
 
@@ -23,7 +24,7 @@ type alias ItemListState =
 {-| -}
 type Route
     = ItemList ItemListState
-    | SourceList
+    | SourceList SourceList.Model
     | AuthError
     | NotFoundRoute
 
@@ -45,7 +46,7 @@ matchers =
     UrlParser.oneOf
         [ UrlParser.map (ItemList { activeItem = Nothing, filter = defaultFilter, items = RemoteData.NotAsked }) UrlParser.top
         , UrlParser.map AuthError (UrlParser.s "auth")
-        , UrlParser.map SourceList (UrlParser.s "sources")
+        , UrlParser.map (SourceList (SourceList.init "" Nothing)) (UrlParser.s "sources")
         , UrlParser.map (\primary tagName -> ItemList { activeItem = Nothing, filter = { primary = primary, secondary = OnlyTag (Maybe.withDefault "" <| Http.decodeUri tagName) }, items = RemoteData.NotAsked }) (primaryFilter </> UrlParser.s "tag" </> UrlParser.string)
         , UrlParser.map (\primary sourceId -> ItemList { activeItem = Nothing, filter = { primary = primary, secondary = OnlySource sourceId }, items = RemoteData.NotAsked }) (primaryFilter </> UrlParser.s "source" </> UrlParser.int)
         , UrlParser.map (\primary -> ItemList { activeItem = Nothing, filter = { primary = primary, secondary = AllTags }, items = RemoteData.NotAsked }) (primaryFilter </> UrlParser.s "all")
@@ -102,7 +103,7 @@ link route =
             in
                 "#" ++ primary ++ "/" ++ secondary
 
-        SourceList ->
+        SourceList _ ->
             "#sources"
 
         AuthError ->

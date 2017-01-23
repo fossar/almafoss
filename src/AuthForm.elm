@@ -1,4 +1,4 @@
-module AuthForm exposing (Model, Msg(..), SignInError(..), initModel, changeLang, update, authForm)
+module AuthForm exposing (Model, Msg(..), SignInError(..), init, update, authForm)
 
 {-| This module takes care of user authentication.
 
@@ -6,7 +6,7 @@ module AuthForm exposing (Model, Msg(..), SignInError(..), initModel, changeLang
 @docs Model, Msg, SignInError
 
 ## Model
-@docs initModel, changeLang
+@docs init
 
 ## Update
 @docs update
@@ -31,7 +31,6 @@ import Utils exposing (onEnter)
 -}
 type alias Model =
     { host : String
-    , lang : Language
     , credentials : Credentials
     , error : Maybe SignInError
     }
@@ -56,20 +55,12 @@ type SignInError
 
 {-| Initialise model
 -}
-initModel : String -> Language -> Model
-initModel host lang =
+init : String -> Model
+init host =
     { host = host
-    , lang = lang
     , credentials = { username = "", password = "" }
     , error = Nothing
     }
-
-
-{-| Change language of the component
--}
-changeLang : Language -> Model -> Model
-changeLang lang model =
-    { model | lang = lang }
 
 
 {-| Update module state based on an action.
@@ -109,8 +100,8 @@ update action model =
 
 {-| The view representing authentication form
 -}
-authForm : (Msg -> msg) -> Model -> Html msg
-authForm msg model =
+authForm : (Msg -> msg) -> Model -> Language -> Html msg
+authForm msg model lang =
     let
         error_msg =
             case model.error of
@@ -118,7 +109,7 @@ authForm msg model =
                     []
 
                 Just WrongCredentials ->
-                    [ Html.p [] [ text <| translate model.lang Messages.IncorrectCredentials ] ]
+                    [ Html.p [] [ text <| translate lang Messages.IncorrectCredentials ] ]
 
                 Just (HttpError e) ->
                     [ Html.p [] [ text (toString e) ] ]
@@ -126,15 +117,15 @@ authForm msg model =
         Html.form [ class "auth-form" ] <|
             error_msg
                 ++ [ Html.div [ class "form-group" ]
-                        [ Html.label [ for "auth-form-username" ] [ text <| translate model.lang Messages.UserName ]
+                        [ Html.label [ for "auth-form-username" ] [ text <| translate lang Messages.UserName ]
                         , Html.div [ class "form-control" ] [ input [ id "auth-form-username", type_ "text", onInput (\username -> msg (UpdateUserName username)), value model.credentials.username, onEnter (msg Authenticate) ] [] ]
                         ]
                    , Html.div [ class "form-group" ]
-                        [ Html.label [ for "auth-form-password" ] [ text <| translate model.lang Messages.Password ]
+                        [ Html.label [ for "auth-form-password" ] [ text <| translate lang Messages.Password ]
                         , Html.div [ class "form-control" ] [ input [ id "auth-form-password", type_ "password", onInput (\password -> msg (UpdatePassword password)), value model.credentials.password, onEnter (msg Authenticate) ] [] ]
                         ]
                    , Html.div [ class "form-group" ]
-                        [ button [ type_ "button", onClick (msg Authenticate) ] [ text <| translate model.lang Messages.SignIn ]
+                        [ button [ type_ "button", onClick (msg Authenticate) ] [ text <| translate lang Messages.SignIn ]
                         ]
                    ]
 

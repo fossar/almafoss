@@ -46,7 +46,6 @@ type alias Model =
     , lang : Language
     , tags : RemoteData.WebData (List Tag)
     , sources : RemoteData.WebData (List Source)
-    , sourceList : SourceList.Model
     , stats : RemoteData.WebData Stats
     , credentials : Maybe Credentials
     , authForm : AuthForm.Model
@@ -88,18 +87,14 @@ init { host } location =
         lang =
             defaultLanguage
 
-        ( sourceListModel, sourceListCmds ) =
-            SourceList.init host lang Nothing
-
         initialModel =
             { host = host
             , lang = lang
             , tags = RemoteData.NotAsked
             , sources = RemoteData.NotAsked
-            , sourceList = sourceListModel
             , stats = RemoteData.NotAsked
             , credentials = Nothing
-            , authForm = AuthForm.initModel host defaultLanguage
+            , authForm = AuthForm.init host
             , combos = Kbd.init ComboMsg keyboardCombos
             , filtersExpanded = True
             , tagsExpanded = True
@@ -225,25 +220,16 @@ routeCmds maybeOldModel model =
                             in
                                 ( newModel, newCmds )
 
-                    Routing.SourceList ->
+                    Routing.SourceList sourceListModel ->
                         let
                             newCmds =
                                 Cmd.batch
-                                    [ Cmd.map SourceList (SourceList.fetchSourceData model.sourceList)
-                                    , Cmd.map SourceList (SourceList.fetchSpouts model.sourceList)
+                                    [ Cmd.map SourceList (SourceList.fetchSourceData sourceListModel)
+                                    , Cmd.map SourceList (SourceList.fetchSpouts sourceListModel)
                                     , updateTitle
                                     ]
-
-                            sourceList =
-                                model.sourceList
-
-                            newSourceList =
-                                { sourceList | data = RemoteData.Loading }
-
-                            newModel =
-                                { model | sourceList = newSourceList }
                         in
-                            ( newModel, newCmds )
+                            ( setSourceListSources RemoteData.Loading model, newCmds )
 
                     Routing.NotFoundRoute ->
                         let
@@ -311,7 +297,7 @@ update action model =
         ShowSourceList ->
             let
                 cmd =
-                    Navigation.newUrl <| Routing.link Routing.SourceList
+                    Navigation.newUrl <| Routing.link (Routing.SourceList (SourceList.init model.host model.credentials))
             in
                 ( model, cmd )
 
@@ -715,11 +701,16 @@ update action model =
                 ( { model | authForm = newModel }, Cmd.map AuthForm cmd )
 
         SourceList msg ->
-            let
-                ( newModel, cmd ) =
-                    SourceList.update msg model.sourceList
-            in
-                ( { model | sourceList = newModel }, Cmd.map SourceList cmd )
+            case model.route of
+                Routing.SourceList sourceListModel ->
+                    let
+                        ( newModel, cmd ) =
+                            SourceList.update msg sourceListModel
+                    in
+                        ( setSourceListModel newModel model, Cmd.map SourceList cmd )
+
+                _ ->
+                    ( model, Cmd.none )
 
         ComboMsg msg ->
             let
@@ -738,13 +729,7 @@ update action model =
             ( { model | sourcesExpanded = not model.sourcesExpanded }, Cmd.none )
 
         ChangeLanguage lang ->
-            ( { model
-                | lang = lang
-                , authForm = AuthForm.changeLang lang model.authForm
-                , sourceList = SourceList.changeLang lang model.sourceList
-              }
-            , Cmd.none
-            )
+            ( { model | lang = lang }, Cmd.none )
 
         OnLocationChange location ->
             let
@@ -773,7 +758,7 @@ titleFor model route =
             Routing.ItemList { activeItem, filter } ->
                 makeTitle Messages.ItemListTitle
 
-            Routing.SourceList ->
+            Routing.SourceList _ ->
                 makeTitle Messages.SourceListTitle
 
             Routing.AuthError ->
@@ -1173,7 +1158,7 @@ mainContent : Model -> Html Msg
 mainContent model =
     case model.route of
         Routing.AuthError ->
-            AuthForm.authForm AuthForm model.authForm
+            AuthForm.authForm AuthForm model.authForm model.lang
 
         Routing.ItemList listData ->
             case listData.items of
@@ -1204,8 +1189,8 @@ mainContent model =
                         _ ->
                             Markdown.toHtml [] (toString err)
 
-        Routing.SourceList ->
-            Html.map SourceList (SourceList.sourceList model.sourceList)
+        Routing.SourceList sourceListModel ->
+            Html.map SourceList (SourceList.sourceList sourceListModel model.lang)
 
         Routing.NotFoundRoute ->
             text <| translate model.lang Messages.NotFound
@@ -1246,6 +1231,16 @@ setItemListItems items =
     mapItemListItems (always items)
 
 
+setSourceListSources : RemoteData.WebData (List SourceList.DisplaySourceData) -> Model -> Model
+setSourceListSources sources =
+    mapSourceListSources (always sources)
+
+
+setSourceListModel : SourceList.Model -> Model -> Model
+setSourceListModel model =
+    mapRoute (mapSourceListModel (always model))
+
+
 setItemListActiveItem : Maybe Int -> Model -> Model
 setItemListActiveItem activeItem =
     mapItemListActiveItem (always activeItem)
@@ -1266,6 +1261,21 @@ mapItemListState f data =
             data
 
 
+mapSources : Mapper SourceList.Model (RemoteData.WebData (List SourceList.DisplaySourceData))
+mapSources f data =
+    { data | sources = f data.sources }
+
+
+mapSourceListModel : Mapper Routing.Route SourceList.Model
+mapSourceListModel f data =
+    case data of
+        Routing.SourceList model ->
+            Routing.SourceList (f model)
+
+        _ ->
+            data
+
+
 mapItems : Mapper Routing.ItemListState (RemoteData.WebData (List DisplayItem))
 mapItems f data =
     { data | items = f data.items }
@@ -1279,6 +1289,11 @@ mapActiveItem f data =
 mapItemListItems : Mapper Model (RemoteData.WebData (List DisplayItem))
 mapItemListItems =
     mapRoute << mapItemListState << mapItems
+
+
+mapSourceListSources : Mapper Model (RemoteData.WebData (List SourceList.DisplaySourceData))
+mapSourceListSources =
+    mapRoute << mapSourceListModel << mapSources
 
 
 mapItemListActiveItem : Mapper Model (Maybe Int)
