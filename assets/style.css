@@ -234,11 +234,6 @@ main {
 	display: none;
 }
 
-
-.auth-form, .source-form {
-	display: table;
-}
-
 .auth-form .form-group, .source-form .form-group {
 	display: table-row;
 }

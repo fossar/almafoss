@@ -48,13 +48,27 @@ type alias Model =
     , sources : RemoteData.WebData (List Source)
     , stats : RemoteData.WebData Stats
     , credentials : Maybe Credentials
-    , authForm : AuthForm.Model
     , combos : Kbd.Model Msg
+    , page : Page
     , route : Routing.Route
     , filtersExpanded : Bool
     , tagsExpanded : Bool
     , sourcesExpanded : Bool
     }
+
+
+type alias ItemListState =
+    { activeItem : Maybe Int
+    , filter : Filter
+    , items : RemoteData.WebData (List DisplayItem)
+    }
+
+
+type Page
+    = ItemList ItemListState
+    | SourceList SourceList.Model
+    | SignIn AuthForm.Model
+    | NotFoundRoute
 
 
 {-| Entry point of the application.
@@ -75,14 +89,17 @@ main =
 
 initialRoute : Routing.Route
 initialRoute =
-    Routing.ItemList { activeItem = Nothing, filter = defaultFilter, items = RemoteData.NotAsked }
+    Routing.ItemList defaultFilter
 
 
 init : Flags -> Location -> ( Model, Cmd Msg )
 init { host } location =
     let
-        currentRoute =
+        route =
             Routing.parseLocation location
+
+        currentPage =
+            toPage route
 
         lang =
             defaultLanguage
@@ -94,15 +111,15 @@ init { host } location =
             , sources = RemoteData.NotAsked
             , stats = RemoteData.NotAsked
             , credentials = Nothing
-            , authForm = AuthForm.init host
             , combos = Kbd.init ComboMsg keyboardCombos
+            , page = currentPage
+            , route = route
             , filtersExpanded = True
             , tagsExpanded = True
             , sourcesExpanded = False
-            , route = currentRoute
             }
     in
-        routeCmds Nothing initialModel
+        loadPage Nothing initialModel
 
 
 
@@ -119,8 +136,8 @@ type Msg
     | TagsResponse (Result Http.Error (List Tag))
     | SourcesResponse (Result Http.Error (List Source))
     | StatsResponse (Result Http.Error Stats)
-    | AuthForm AuthForm.Msg
-    | SourceList SourceList.Msg
+    | ForAuthForm AuthForm.Msg
+    | ForSourceList SourceList.Msg
     | ComboMsg Kbd.Msg
     | ActivatePrevious
     | ActivateNext
@@ -154,26 +171,30 @@ setTitle title =
     Task.perform (always NoOp) (Document.title title)
 
 
-routeCmds : Maybe Model -> Model -> ( Model, Cmd Msg )
-routeCmds maybeOldModel model =
+loadPage : Maybe Routing.Route -> Model -> ( Model, Cmd Msg )
+loadPage maybeOldRoute model =
     let
         routeUnchanged =
-            case maybeOldModel of
-                Just oldModel ->
-                    Routing.routesEqual oldModel.route model.route
+            Maybe.unwrap False (\oldRoute -> oldRoute == model.route) maybeOldRoute
 
-                Nothing ->
-                    False
+        page =
+            if routeUnchanged then
+                model.page
+            else
+                toPage model.route
+
+        baseModel =
+            { model | page = page }
     in
         if routeUnchanged then
-            ( model, Cmd.none )
+            ( baseModel, Cmd.none )
         else
             let
                 updateTitle =
-                    setTitle (titleFor model model.route)
+                    setTitle (titleFor baseModel page)
             in
-                case model.route of
-                    Routing.AuthError ->
+                case page of
+                    SignIn _ ->
                         let
                             focusUsername =
                                 Task.attempt (always NoOp) (Dom.focus "auth-form-username")
@@ -184,19 +205,19 @@ routeCmds maybeOldModel model =
                                     , updateTitle
                                     ]
                         in
-                            ( model, newCmds )
+                            ( baseModel, newCmds )
 
-                    Routing.ItemList itemData ->
-                        if Maybe.isJust maybeOldModel then
+                    ItemList _ ->
+                        if Maybe.isJust maybeOldRoute then
                             let
                                 newCmds =
                                     Cmd.batch
-                                        [ fetchItems model
+                                        [ fetchItems baseModel
                                         , updateTitle
                                         ]
 
                                 newModel =
-                                    model
+                                    baseModel
                                         |> setItemListItems RemoteData.Loading
                             in
                                 ( newModel, newCmds )
@@ -204,15 +225,15 @@ routeCmds maybeOldModel model =
                             let
                                 newCmds =
                                     Cmd.batch
-                                        [ fetchItems model
-                                        , fetchTags model
-                                        , fetchSources model
-                                        , fetchStats model
+                                        [ fetchItems baseModel
+                                        , fetchTags baseModel
+                                        , fetchSources baseModel
+                                        , fetchStats baseModel
                                         , updateTitle
                                         ]
 
                                 newModel =
-                                    model
+                                    baseModel
                                         |> setItemListItems RemoteData.Loading
                                         |> setTags RemoteData.Loading
                                         |> setSources RemoteData.Loading
@@ -220,23 +241,23 @@ routeCmds maybeOldModel model =
                             in
                                 ( newModel, newCmds )
 
-                    Routing.SourceList sourceListModel ->
+                    SourceList sourceListModel ->
                         let
                             newCmds =
                                 Cmd.batch
-                                    [ Cmd.map SourceList (SourceList.fetchSourceData sourceListModel)
-                                    , Cmd.map SourceList (SourceList.fetchSpouts sourceListModel)
+                                    [ Cmd.map ForSourceList (SourceList.fetchSourceData model.credentials model.host)
+                                    , Cmd.map ForSourceList (SourceList.fetchSpouts model.credentials model.host)
                                     , updateTitle
                                     ]
                         in
-                            ( setSourceListSources RemoteData.Loading model, newCmds )
+                            ( setSourceListSources RemoteData.Loading baseModel, newCmds )
 
-                    Routing.NotFoundRoute ->
+                    NotFoundRoute ->
                         let
                             newCmds =
                                 updateTitle
                         in
-                            ( model, newCmds )
+                            ( baseModel, newCmds )
 
 
 update : Msg -> Model -> ( Model, Cmd Msg )
@@ -282,38 +303,20 @@ update action model =
                     ( setStats (RemoteData.Failure err) model, Cmd.none )
 
         Authenticate ->
-            ( model, Navigation.newUrl <| Routing.link Routing.AuthError )
+            ( model, Navigation.newUrl <| Routing.link Routing.SignIn )
 
         Deauthenticate ->
             ( { model | credentials = Nothing }, Cmd.none )
 
         ShowItemList filter ->
-            let
-                cmd =
-                    Navigation.newUrl <| Routing.link (Routing.ItemList { activeItem = Nothing, filter = filter, items = RemoteData.NotAsked })
-            in
-                ( model, cmd )
+            ( model, Navigation.newUrl <| Routing.link (Routing.ItemList filter) )
 
         ShowSourceList ->
-            let
-                cmd =
-                    Navigation.newUrl <| Routing.link (Routing.SourceList (SourceList.init model.host model.credentials))
-            in
-                ( model, cmd )
-
-        AuthForm (AuthForm.AuthSucceeded credentials) ->
-            let
-                newModel =
-                    { model | credentials = Just credentials }
-
-                cmd =
-                    Navigation.newUrl <| Routing.link initialRoute
-            in
-                ( newModel, cmd )
+            ( model, Navigation.newUrl <| Routing.link Routing.SourceList )
 
         OpenLink ->
-            case model.route of
-                Routing.ItemList listData ->
+            case model.page of
+                ItemList listData ->
                     case listData.items of
                         RemoteData.Success items ->
                             let
@@ -345,8 +348,8 @@ update action model =
                     ( model, Cmd.none )
 
         SelectPrevious ->
-            case model.route of
-                Routing.ItemList listData ->
+            case model.page of
+                ItemList listData ->
                     case listData.items of
                         RemoteData.Success items ->
                             let
@@ -361,14 +364,8 @@ update action model =
 
                                         Nothing ->
                                             Cmd.none
-
-                                cmds =
-                                    Cmd.batch
-                                        [ Navigation.newUrl <| Routing.link (Routing.ItemList { listData | activeItem = previousItem })
-                                        , scrollCmd
-                                        ]
                             in
-                                ( model, cmds )
+                                ( setItemListActiveItem previousItem model, scrollCmd )
 
                         _ ->
                             ( model, Cmd.none )
@@ -377,8 +374,8 @@ update action model =
                     ( model, Cmd.none )
 
         SelectNext ->
-            case model.route of
-                Routing.ItemList listData ->
+            case model.page of
+                ItemList listData ->
                     case listData.items of
                         RemoteData.Success items ->
                             let
@@ -393,14 +390,8 @@ update action model =
 
                                         Nothing ->
                                             Cmd.none
-
-                                cmds =
-                                    Cmd.batch
-                                        [ Navigation.newUrl <| Routing.link (Routing.ItemList { listData | activeItem = nextItem })
-                                        , scrollCmd
-                                        ]
                             in
-                                ( model, cmds )
+                                ( setItemListActiveItem nextItem model, scrollCmd )
 
                         _ ->
                             ( model, Cmd.none )
@@ -409,8 +400,8 @@ update action model =
                     ( model, Cmd.none )
 
         ActivatePrevious ->
-            case model.route of
-                Routing.ItemList listData ->
+            case model.page of
+                ItemList listData ->
                     case listData.items of
                         RemoteData.Success items ->
                             let
@@ -452,8 +443,8 @@ update action model =
                     ( model, Cmd.none )
 
         ActivateNext ->
-            case model.route of
-                Routing.ItemList listData ->
+            case model.page of
+                ItemList listData ->
                     case listData.items of
                         RemoteData.Success items ->
                             let
@@ -495,8 +486,8 @@ update action model =
                     ( model, Cmd.none )
 
         ActivateEntry itemId ->
-            case model.route of
-                Routing.ItemList listData ->
+            case model.page of
+                ItemList listData ->
                     case listData.items of
                         RemoteData.Success items ->
                             let
@@ -524,8 +515,8 @@ update action model =
                     ( model, Cmd.none )
 
         ToggleLinkOpen ->
-            case model.route of
-                Routing.ItemList listData ->
+            case model.page of
+                ItemList listData ->
                     case listData.items of
                         RemoteData.Success items ->
                             let
@@ -548,8 +539,8 @@ update action model =
                     ( model, Cmd.none )
 
         ToggleLinkRead ->
-            case model.route of
-                Routing.ItemList listData ->
+            case model.page of
+                ItemList listData ->
                     case listData.items of
                         RemoteData.Success items ->
                             case List.find (\item -> Just item.item.id == listData.activeItem) items of
@@ -566,8 +557,8 @@ update action model =
                     ( model, Cmd.none )
 
         ToggleLinkStarred ->
-            case model.route of
-                Routing.ItemList listData ->
+            case model.page of
+                ItemList listData ->
                     case listData.items of
                         RemoteData.Success items ->
                             case List.find (\item -> Just item.item.id == listData.activeItem) items of
@@ -632,8 +623,8 @@ update action model =
         SelectTag tagName ->
             let
                 newFilter =
-                    case model.route of
-                        Routing.ItemList listData ->
+                    case model.page of
+                        ItemList listData ->
                             let
                                 oldFilter =
                                     listData.filter
@@ -648,8 +639,8 @@ update action model =
         SelectAllTags ->
             let
                 newFilter =
-                    case model.route of
-                        Routing.ItemList listData ->
+                    case model.page of
+                        ItemList listData ->
                             let
                                 oldFilter =
                                     listData.filter
@@ -664,8 +655,8 @@ update action model =
         SelectSource sourceId ->
             let
                 newFilter =
-                    case model.route of
-                        Routing.ItemList listData ->
+                    case model.page of
+                        ItemList listData ->
                             let
                                 oldFilter =
                                     listData.filter
@@ -680,8 +671,8 @@ update action model =
         SelectPrimaryFilter filter ->
             let
                 newFilter =
-                    case model.route of
-                        Routing.ItemList listData ->
+                    case model.page of
+                        ItemList listData ->
                             let
                                 oldFilter =
                                     listData.filter
@@ -693,21 +684,65 @@ update action model =
             in
                 update (ShowItemList newFilter) model
 
-        AuthForm msg ->
+        ForAuthForm (AuthForm.AuthSucceeded credentials) ->
             let
-                ( newModel, cmd ) =
-                    AuthForm.update msg model.authForm
-            in
-                ( { model | authForm = newModel }, Cmd.map AuthForm cmd )
+                newModel =
+                    { model | credentials = Just credentials }
 
-        SourceList msg ->
-            case model.route of
-                Routing.SourceList sourceListModel ->
+                cmd =
+                    Navigation.newUrl <| Routing.link initialRoute
+            in
+                ( newModel, cmd )
+
+        ForAuthForm (AuthForm.Authenticate) ->
+            case model.page of
+                SignIn authFormModel ->
                     let
-                        ( newModel, cmd ) =
+                        cmd =
+                            AuthForm.authenticate authFormModel.credentials model.host
+                    in
+                        ( model, Cmd.map ForAuthForm cmd )
+
+                _ ->
+                    ( model, Cmd.none )
+
+        ForAuthForm msg ->
+            case model.page of
+                SignIn authFormModel ->
+                    let
+                        newModel =
+                            AuthForm.update msg authFormModel
+                    in
+                        ( setAuthFormModel newModel model, Cmd.none )
+
+                _ ->
+                    ( model, Cmd.none )
+
+        ForSourceList (SourceList.Save sourceId) ->
+            case model.page of
+                SourceList sourceListModel ->
+                    case sourceListModel.sources of
+                        RemoteData.Success sources ->
+                            let
+                                cmd =
+                                    SourceList.updateSourceData model.credentials model.host sourceListModel sourceId
+                            in
+                                ( model, Cmd.map ForSourceList cmd )
+
+                        _ ->
+                            (model, Cmd.none)
+
+                _ ->
+                    (model, Cmd.none)
+
+        ForSourceList msg ->
+            case model.page of
+                SourceList sourceListModel ->
+                    let
+                        newModel =
                             SourceList.update msg sourceListModel
                     in
-                        ( setSourceListModel newModel model, Cmd.map SourceList cmd )
+                        ( setSourceListModel newModel model, Cmd.none )
 
                 _ ->
                     ( model, Cmd.none )
@@ -733,20 +768,20 @@ update action model =
 
         OnLocationChange location ->
             let
-                newRoute =
+                route =
                     Routing.parseLocation location
 
                 newModel =
-                    { model | route = newRoute }
+                    { model | route = route }
             in
-                routeCmds (Just model) newModel
+                loadPage (Just model.route) newModel
 
         NoOp ->
             ( model, Cmd.none )
 
 
-titleFor : Model -> Routing.Route -> String
-titleFor model route =
+titleFor : Model -> Page -> String
+titleFor model page =
     let
         tr =
             translate model.lang
@@ -754,17 +789,17 @@ titleFor model route =
         makeTitle msg =
             tr (Messages.Title (Just (tr msg)))
     in
-        case route of
-            Routing.ItemList { activeItem, filter } ->
+        case page of
+            ItemList _ ->
                 makeTitle Messages.ItemListTitle
 
-            Routing.SourceList _ ->
+            SourceList _ ->
                 makeTitle Messages.SourceListTitle
 
-            Routing.AuthError ->
+            SignIn _ ->
                 makeTitle Messages.AuthenticationTitle
 
-            Routing.NotFoundRoute ->
+            NotFoundRoute ->
                 makeTitle Messages.NotFoundTitle
 
 
@@ -915,8 +950,8 @@ navFilters model =
                 List.map filterLabel [ ( AllItems, Messages.All, .total ), ( UnreadItems, Messages.Unread, .unread ), ( StarredItems, Messages.Starred, .starred ) ]
 
         activePrimaryFilter =
-            case model.route of
-                Routing.ItemList { filter } ->
+            case model.page of
+                ItemList { filter } ->
                     Just filter.primary
 
                 _ ->
@@ -935,8 +970,8 @@ navTags : Model -> Html Msg
 navTags model =
     let
         activeTag =
-            case model.route of
-                Routing.ItemList { filter } ->
+            case model.page of
+                ItemList { filter } ->
                     case filter.secondary of
                         OnlyTag _ ->
                             Just filter.secondary
@@ -981,8 +1016,8 @@ navSources : Model -> Html Msg
 navSources model =
     let
         activeSourceId =
-            case model.route of
-                Routing.ItemList { filter } ->
+            case model.page of
+                ItemList { filter } ->
                     case filter.secondary of
                         OnlySource sourceId ->
                             Just sourceId
@@ -1156,11 +1191,11 @@ view model =
 
 mainContent : Model -> Html Msg
 mainContent model =
-    case model.route of
-        Routing.AuthError ->
-            AuthForm.authForm AuthForm model.authForm model.lang
+    case model.page of
+        SignIn authFormModel ->
+            AuthForm.authForm ForAuthForm authFormModel model.lang
 
-        Routing.ItemList listData ->
+        ItemList listData ->
             case listData.items of
                 RemoteData.Loading ->
                     text <| translate model.lang Messages.Loading
@@ -1189,10 +1224,10 @@ mainContent model =
                         _ ->
                             Markdown.toHtml [] (toString err)
 
-        Routing.SourceList sourceListModel ->
-            Html.map SourceList (SourceList.sourceList sourceListModel model.lang)
+        SourceList sourceListModel ->
+            Html.map ForSourceList (SourceList.sourceList model.host sourceListModel model.lang)
 
-        Routing.NotFoundRoute ->
+        NotFoundRoute ->
             text <| translate model.lang Messages.NotFound
 
 
@@ -1238,7 +1273,12 @@ setSourceListSources sources =
 
 setSourceListModel : SourceList.Model -> Model -> Model
 setSourceListModel model =
-    mapRoute (mapSourceListModel (always model))
+    mapPage (mapSourceListModel (always model))
+
+
+setAuthFormModel : AuthForm.Model -> Model -> Model
+setAuthFormModel model =
+    mapPage (mapAuthFormModel (always model))
 
 
 setItemListActiveItem : Maybe Int -> Model -> Model
@@ -1246,16 +1286,16 @@ setItemListActiveItem activeItem =
     mapItemListActiveItem (always activeItem)
 
 
-mapRoute : Mapper Model Routing.Route
-mapRoute f data =
-    { data | route = f data.route }
+mapPage : Mapper Model Page
+mapPage f data =
+    { data | page = f data.page }
 
 
-mapItemListState : Mapper Routing.Route Routing.ItemListState
+mapItemListState : Mapper Page ItemListState
 mapItemListState f data =
     case data of
-        Routing.ItemList listData ->
-            Routing.ItemList (f listData)
+        ItemList listData ->
+            ItemList (f listData)
 
         _ ->
             data
@@ -1266,39 +1306,49 @@ mapSources f data =
     { data | sources = f data.sources }
 
 
-mapSourceListModel : Mapper Routing.Route SourceList.Model
+mapSourceListModel : Mapper Page SourceList.Model
 mapSourceListModel f data =
     case data of
-        Routing.SourceList model ->
-            Routing.SourceList (f model)
+        SourceList model ->
+            SourceList (f model)
 
         _ ->
             data
 
 
-mapItems : Mapper Routing.ItemListState (RemoteData.WebData (List DisplayItem))
+mapAuthFormModel : Mapper Page AuthForm.Model
+mapAuthFormModel f data =
+    case data of
+        SignIn model ->
+            SignIn (f model)
+
+        _ ->
+            data
+
+
+mapItems : Mapper ItemListState (RemoteData.WebData (List DisplayItem))
 mapItems f data =
     { data | items = f data.items }
 
 
-mapActiveItem : Mapper Routing.ItemListState (Maybe Int)
+mapActiveItem : Mapper ItemListState (Maybe Int)
 mapActiveItem f data =
     { data | activeItem = f data.activeItem }
 
 
 mapItemListItems : Mapper Model (RemoteData.WebData (List DisplayItem))
 mapItemListItems =
-    mapRoute << mapItemListState << mapItems
+    mapPage << mapItemListState << mapItems
 
 
 mapSourceListSources : Mapper Model (RemoteData.WebData (List SourceList.DisplaySourceData))
 mapSourceListSources =
-    mapRoute << mapSourceListModel << mapSources
+    mapPage << mapSourceListModel << mapSources
 
 
 mapItemListActiveItem : Mapper Model (Maybe Int)
 mapItemListActiveItem =
-    mapRoute << mapItemListState << mapActiveItem
+    mapPage << mapItemListState << mapActiveItem
 
 
 
@@ -1309,8 +1359,8 @@ fetchItems : Model -> Cmd Msg
 fetchItems model =
     let
         filter =
-            case model.route of
-                Routing.ItemList { filter } ->
+            case model.page of
+                ItemList { filter } ->
                     filter
 
                 _ ->
@@ -1416,3 +1466,19 @@ updateItem itemId upd =
                 )
             )
         )
+
+
+toPage : Routing.Route -> Page
+toPage route =
+    case route of
+        Routing.ItemList filter ->
+            ItemList (ItemListState Nothing filter RemoteData.NotAsked)
+
+        Routing.SourceList ->
+            SourceList SourceList.init
+
+        Routing.SignIn ->
+            SignIn (AuthForm.init)
+
+        Routing.NotFoundRoute ->
+            NotFoundRoute

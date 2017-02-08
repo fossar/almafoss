@@ -1,4 +1,4 @@
-module AuthForm exposing (Model, Msg(..), SignInError(..), init, update, authForm)
+module AuthForm exposing (Model, Msg(..), SignInError(..), init, update, authForm, authenticate)
 
 {-| This module takes care of user authentication.
 
@@ -9,7 +9,7 @@ module AuthForm exposing (Model, Msg(..), SignInError(..), init, update, authFor
 @docs init
 
 ## Update
-@docs update
+@docs update, authenticate
 
 ## View
 @docs authForm
@@ -30,8 +30,7 @@ import Utils exposing (onEnter)
 {-| Model of the authentication module.
 -}
 type alias Model =
-    { host : String
-    , credentials : Credentials
+    { credentials : Credentials
     , error : Maybe SignInError
     }
 
@@ -55,21 +54,20 @@ type SignInError
 
 {-| Initialise model
 -}
-init : String -> Model
-init host =
-    { host = host
-    , credentials = { username = "", password = "" }
+init : Model
+init =
+    { credentials = { username = "", password = "" }
     , error = Nothing
     }
 
 
 {-| Update module state based on an action.
 -}
-update : Msg -> Model -> ( Model, Cmd Msg )
+update : Msg -> Model -> Model
 update action model =
     case action of
         Authenticate ->
-            ( model, authenticate model )
+            Debug.crash "Handled upstream"
 
         UpdateUserName username ->
             let
@@ -79,7 +77,7 @@ update action model =
                 newCredentials =
                     { credentials | username = username }
             in
-                ( { model | credentials = newCredentials }, Cmd.none )
+                { model | credentials = newCredentials }
 
         UpdatePassword password ->
             let
@@ -89,13 +87,13 @@ update action model =
                 newCredentials =
                     { credentials | password = password }
             in
-                ( { model | credentials = newCredentials }, Cmd.none )
+                { model | credentials = newCredentials }
 
         AuthSucceeded _ ->
-            ( { model | error = Nothing }, Cmd.none )
+            { model | error = Nothing }
 
         AuthFailed err ->
-            ( { model | error = Just err }, Cmd.none )
+            { model | error = Just err }
 
 
 {-| The view representing authentication form
@@ -109,10 +107,10 @@ authForm msg model lang =
                     []
 
                 Just WrongCredentials ->
-                    [ Html.p [] [ text <| translate lang Messages.IncorrectCredentials ] ]
+                    [ Html.p [class "form-message"] [ text <| translate lang Messages.IncorrectCredentials ] ]
 
                 Just (HttpError e) ->
-                    [ Html.p [] [ text (toString e) ] ]
+                    [ Html.p [class "form-message"] [ text (toString e) ] ]
     in
         Html.form [ class "auth-form" ] <|
             error_msg
@@ -132,8 +130,8 @@ authForm msg model lang =
 
 {-| Verify the credentials on the server
 -}
-authenticate : Model -> Cmd Msg
-authenticate { credentials, host } =
+authenticate : Credentials -> String -> Cmd Msg
+authenticate credentials host =
     let
         requestModel =
             { credentials = Nothing, host = host }

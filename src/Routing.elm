@@ -1,31 +1,21 @@
-module Routing exposing (Route(..), ItemListState, parseLocation, link, routesEqual)
+module Routing exposing (Route(..), parseLocation, link)
 
 {-| This module defines the type representing route and provides functions for converting the location to route and vice versa.
 
-@docs Route, ItemListState, parseLocation, link, routesEqual
+@docs Route, parseLocation, link
 -}
 
 import Navigation exposing (Location)
 import Http
-import RemoteData
-import SourceList
 import Types exposing (..)
 import UrlParser exposing (..)
 
 
 {-| -}
-type alias ItemListState =
-    { activeItem : Maybe Int
-    , filter : Filter
-    , items : RemoteData.WebData (List DisplayItem)
-    }
-
-
-{-| -}
 type Route
-    = ItemList ItemListState
-    | SourceList SourceList.Model
-    | AuthError
+    = ItemList Filter
+    | SourceList
+    | SignIn
     | NotFoundRoute
 
 
@@ -44,12 +34,12 @@ parseLocation location =
 matchers : UrlParser.Parser (Route -> a) a
 matchers =
     UrlParser.oneOf
-        [ UrlParser.map (ItemList { activeItem = Nothing, filter = defaultFilter, items = RemoteData.NotAsked }) UrlParser.top
-        , UrlParser.map AuthError (UrlParser.s "auth")
-        , UrlParser.map (SourceList (SourceList.init "" Nothing)) (UrlParser.s "sources")
-        , UrlParser.map (\primary tagName -> ItemList { activeItem = Nothing, filter = { primary = primary, secondary = OnlyTag (Maybe.withDefault "" <| Http.decodeUri tagName) }, items = RemoteData.NotAsked }) (primaryFilter </> UrlParser.s "tag" </> UrlParser.string)
-        , UrlParser.map (\primary sourceId -> ItemList { activeItem = Nothing, filter = { primary = primary, secondary = OnlySource sourceId }, items = RemoteData.NotAsked }) (primaryFilter </> UrlParser.s "source" </> UrlParser.int)
-        , UrlParser.map (\primary -> ItemList { activeItem = Nothing, filter = { primary = primary, secondary = AllTags }, items = RemoteData.NotAsked }) (primaryFilter </> UrlParser.s "all")
+        [ UrlParser.map (ItemList defaultFilter) UrlParser.top
+        , UrlParser.map SignIn (UrlParser.s "auth")
+        , UrlParser.map SourceList (UrlParser.s "sources")
+        , UrlParser.map (\primary tagName -> ItemList { primary = primary, secondary = OnlyTag (Maybe.withDefault "" <| Http.decodeUri tagName) }) (primaryFilter </> UrlParser.s "tag" </> UrlParser.string)
+        , UrlParser.map (\primary sourceId -> ItemList { primary = primary, secondary = OnlySource sourceId }) (primaryFilter </> UrlParser.s "source" </> UrlParser.int)
+        , UrlParser.map (\primary -> ItemList { primary = primary, secondary = AllTags }) (primaryFilter </> UrlParser.s "all")
         ]
 
 
@@ -77,7 +67,7 @@ primaryFilter =
 link : Route -> String
 link route =
     case route of
-        ItemList { activeItem, filter } ->
+        ItemList filter ->
             let
                 primary =
                     case filter.primary of
@@ -103,29 +93,12 @@ link route =
             in
                 "#" ++ primary ++ "/" ++ secondary
 
-        SourceList _ ->
+        SourceList ->
             "#sources"
 
-        AuthError ->
+        SignIn ->
             "#auth"
 
         NotFoundRoute ->
             "#404"
 
-
-{-| Test routes for equality.
-
-Ignores internal state stored in the route.
--}
-routesEqual : Route -> Route -> Bool
-routesEqual a b =
-    let
-        stripState route =
-            case route of
-                ItemList listData ->
-                    ItemList { listData | activeItem = Nothing, items = RemoteData.NotAsked }
-
-                _ ->
-                    route
-    in
-        stripState a == stripState b
