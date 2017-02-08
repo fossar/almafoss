@@ -234,11 +234,11 @@ main {
 	display: none;
 }
 
-.auth-form .form-group, .source-form .form-group {
+.form .form-group {
 	display: table-row;
 }
 
-.auth-form .form-group label, .source-form .form-group label, .auth-form .form-group .form-control, .source-form .form-group .form-control {
+.form .form-group label, .form .form-group .form-control {
 	display: table-cell;
 }
 

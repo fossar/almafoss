@@ -16,15 +16,14 @@ module AuthForm exposing (Model, Msg(..), SignInError(..), init, update, authFor
 -}
 
 import Api
+import Forms
 import Html exposing (Html, a, article, button, div, h1, h2, header, img, input, li, nav, span, text, ul)
 import Html.Attributes exposing (..)
-import Html.Events exposing (onClick, onInput)
 import Http
 import Locale exposing (translate)
 import Localization.Language exposing (Language, nativeName)
 import Messages
 import Types exposing (..)
-import Utils exposing (onEnter)
 
 
 {-| Model of the authentication module.
@@ -107,24 +106,29 @@ authForm msg model lang =
                     []
 
                 Just WrongCredentials ->
-                    [ Html.p [class "form-message"] [ text <| translate lang Messages.IncorrectCredentials ] ]
+                    [ Html.p [ class "form-message" ] [ text <| translate lang Messages.IncorrectCredentials ] ]
 
                 Just (HttpError e) ->
-                    [ Html.p [class "form-message"] [ text (toString e) ] ]
+                    [ Html.p [ class "form-message" ] [ text (toString e) ] ]
     in
-        Html.form [ class "auth-form" ] <|
+        Forms.form (msg Authenticate) <|
             error_msg
-                ++ [ Html.div [ class "form-group" ]
-                        [ Html.label [ for "auth-form-username" ] [ text <| translate lang Messages.UserName ]
-                        , Html.div [ class "form-control" ] [ input [ id "auth-form-username", type_ "text", onInput (\username -> msg (UpdateUserName username)), value model.credentials.username, onEnter (msg Authenticate) ] [] ]
-                        ]
-                   , Html.div [ class "form-group" ]
-                        [ Html.label [ for "auth-form-password" ] [ text <| translate lang Messages.Password ]
-                        , Html.div [ class "form-control" ] [ input [ id "auth-form-password", type_ "password", onInput (\password -> msg (UpdatePassword password)), value model.credentials.password, onEnter (msg Authenticate) ] [] ]
-                        ]
-                   , Html.div [ class "form-group" ]
-                        [ button [ type_ "button", onClick (msg Authenticate) ] [ text <| translate lang Messages.SignIn ]
-                        ]
+                ++ [ Forms.lineEdit
+                        { identifier = "auth-form-username"
+                        , label = translate lang Messages.UserName
+                        , action = (\username -> msg (UpdateUserName username))
+                        , value = model.credentials.username
+                        }
+                   , Forms.password
+                        { identifier = "auth-form-password"
+                        , label = translate lang Messages.Password
+                        , action = (\password -> msg (UpdatePassword password))
+                        , value = model.credentials.password
+                        }
+                   , Forms.button
+                        { action = msg Authenticate
+                        , label = translate lang Messages.SignIn
+                        }
                    ]
 
 

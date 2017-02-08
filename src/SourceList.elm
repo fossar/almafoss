@@ -17,21 +17,21 @@ module SourceList exposing (Model, Msg(..), DisplaySourceData, init, update, sou
 
 import Api
 import Dict exposing (Dict)
+import Forms
 import Html exposing (Html, a, article, button, div, h1, h2, header, img, input, li, nav, span, text, ul)
 import Html.Accessibility exposing (ariaExpanded)
 import Html.Attributes exposing (..)
 import Html.Events exposing (onClick, onInput)
 import Http
-import Kintail.InputWidget as InputWidget
 import List.Extra as List
 import Locale exposing (translate)
 import Localization.Language exposing (Language, nativeName)
 import Markdown
+import Maybe.Extra as Maybe
 import Messages
 import RemoteData exposing (RemoteData(..), WebData)
 import Types exposing (..)
 import Time.DateTime exposing (toISO8601)
-import Utils exposing (onEnter)
 
 
 {-| Model of the authentication module.
@@ -348,6 +348,14 @@ sourceData host model lang sources =
                 Nothing ->
                     Debug.crash "Trying to get title of non-existent spout."
 
+        getSpoutParams spoutId =
+            case Dict.get spoutId spouts of
+                Just spout ->
+                    spout.params
+
+                Nothing ->
+                    Debug.crash "Trying to get title of non-existent spout."
+
         sourceFormEntryId entry =
             "source-" ++ sourceIdToString sourceId ++ "-form-" ++ entry
     in
@@ -388,20 +396,45 @@ sourceData host model lang sources =
                  in
                     icon ++ title ++ info
                 )
-            , div [ class "source-form source-content", onEnter (Save sourceId) ]
-                [ Html.div [ class "form-group" ]
-                    [ Html.label [ for (sourceFormEntryId "title") ] [ text <| translate lang Messages.SourceTitle ]
-                    , Html.div [ class "form-control" ] [ InputWidget.lineEdit [ id (sourceFormEntryId "title") ] modified.title ] |> Html.map (UpdateSourceTitle sourceId)
-                    ]
-                , Html.div [ class "form-group" ]
-                    [ Html.label [ for (sourceFormEntryId "tags") ] [ text <| translate lang Messages.SourceTags ]
-                    , Html.div [ class "form-control" ] [ InputWidget.lineEdit [ id (sourceFormEntryId "tags") ] (String.join "," modified.tags) ] |> Html.map (UpdateSourceTags sourceId)
-                    ]
-                , Html.div [ class "form-group" ]
-                    [ Html.label [ for (sourceFormEntryId "spout") ] [ text <| translate lang Messages.SourceSpout ]
-                    , Html.div [ class "form-control" ] [ InputWidget.comboBox [ id (sourceFormEntryId "spout") ] getSpoutTitle (Dict.keys spouts) modified.spout |> Html.map (UpdateSourceSpout sourceId) ]
-                    ]
-                ]
+            , Forms.form (Save sourceId)
+                (let
+                    mainFields =
+                        [ Forms.lineEdit
+                            { identifier = (sourceFormEntryId "title")
+                            , label = translate lang Messages.SourceTitle
+                            , value = modified.title
+                            , action = UpdateSourceTitle sourceId
+                            }
+                        , Forms.lineEdit
+                            { identifier = sourceFormEntryId "tags"
+                            , label = translate lang Messages.SourceTags
+                            , value = String.join "," modified.tags
+                            , action = UpdateSourceTags sourceId
+                            }
+                        , Forms.comboBox
+                            { identifier = sourceFormEntryId "spout"
+                            , label = translate lang Messages.SourceSpout
+                            , printer = getSpoutTitle
+                            , values = Dict.keys spouts
+                            , value = modified.spout
+                            , action = UpdateSourceSpout sourceId
+                            }
+                        ]
+
+                    paramFields =
+                        Dict.toList (getSpoutParams modified.spout)
+                            |> List.map
+                                (\( name, param ) ->
+                                    Forms.lineEdit
+                                        { identifier = sourceFormEntryId name
+                                        , label = param.title
+                                        , value = Maybe.withDefault param.default (Maybe.join (Dict.get name modified.params))
+                                        , action = UpdateSourceTags sourceId
+                                        }
+                                )
+                 in
+                    mainFields ++ paramFields
+                )
             , sourceDataPanel model lang sourceId
             ]
 

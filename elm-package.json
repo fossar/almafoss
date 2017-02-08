@@ -10,6 +10,7 @@
         "Api",
         "AuthForm",
         "Document",
+        "Forms",
         "Locale",
         "Locale.Czech",
         "Locale.English",
