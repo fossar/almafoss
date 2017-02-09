@@ -1092,9 +1092,23 @@ navActions model =
             (sourcesButton ++ authButton ++ [ h2 [] [ text "Debug" ] ] ++ debugButtons ++ [ Html.br [] [] ] ++ languageCombo)
 
 
-tag : String -> Html Msg
-tag t =
-    span [ class "tag", onClick (SelectTag t) ] [ text t ]
+getTagColor : Model -> String -> String
+getTagColor model tag =
+    model.tags
+        |> RemoteData.toMaybe
+        |> Maybe.andThen (List.find (\t -> t.tag == tag))
+        |> Maybe.map .color
+        |> Maybe.withDefault "#cccccc"
+
+
+tag : Model -> String -> Html Msg
+tag model t =
+    span
+        [ class "tag"
+        , onClick (SelectTag t)
+        , Html.Attributes.style [ ( "background-color", getTagColor model t ) ]
+        ]
+        [ text t ]
 
 
 entry : Model -> Maybe Int -> DisplayItem -> Html Msg
@@ -1127,7 +1141,7 @@ entry model activeId { item, open } =
                         [ h1 [ onClick (ActivateEntry (Just item.id)) ] [ text item.title ] ]
 
                     tags =
-                        [ span [ class "entry-tags" ] (List.map tag item.tags) ]
+                        [ span [ class "entry-tags" ] (List.map (tag model) item.tags) ]
 
                     info =
                         List.intersperse (text " · ")
@@ -1276,6 +1290,7 @@ setSourceListSources : RemoteData.WebData (List SourceList.DisplaySourceData) ->
 setSourceListSources sources =
     mapSourceListSources (always sources)
 
+
 setSourceListSpouts : RemoteData.WebData (Dict String Spout) -> Model -> Model
 setSourceListSpouts spouts =
     mapSourceListSpouts (always spouts)
@@ -1314,6 +1329,7 @@ mapItemListState f data =
 mapSources : Mapper SourceList.Model (RemoteData.WebData (List SourceList.DisplaySourceData))
 mapSources f data =
     { data | sources = f data.sources }
+
 
 mapSpouts : Mapper SourceList.Model (RemoteData.WebData (Dict String Spout))
 mapSpouts f data =
