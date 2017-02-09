@@ -14,6 +14,7 @@ module Types
         , SourceData
         , Spout
         , SpoutParam
+        , SpoutParamClass(..)
         , Stats
         , Mapper
         )
@@ -27,7 +28,7 @@ module Types
 @docs FilterPrimary, FilterSecondary, Filter, defaultFilter
 
 ## Feed data
-@docs Item, DisplayItem, Tag, Source, SourceData, Spout, SpoutParam, Stats
+@docs Item, DisplayItem, Tag, Source, SourceData, Spout, SpoutParam, SpoutParamClass, Stats
 
 ## Other
 @docs Mapper
@@ -147,12 +148,22 @@ type alias Spout =
 
 
 {-| -}
+type SpoutParamClass
+    = SpoutParamCheckbox
+    | SpoutParamPassword
+    | SpoutParamSelect
+    | SpoutParamText
+    | SpoutParamUrl
+
+
+{-| -}
 type alias SpoutParam =
     { title : String
-    , class : String
+    , class : SpoutParamClass
     , default : String
     , required : Bool
     , validation : List String
+    , values : Maybe (Dict String String)
     }
 
 

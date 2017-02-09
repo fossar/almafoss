@@ -7,6 +7,7 @@ module Main exposing (main)
 
 import AuthForm
 import Api
+import Dict exposing (Dict)
 import Dom
 import Document
 import FontAwesome.Web as Icon
@@ -249,8 +250,13 @@ loadPage maybeOldRoute model =
                                     , Cmd.map ForSourceList (SourceList.fetchSpouts model.credentials model.host)
                                     , updateTitle
                                     ]
+
+                            newModel =
+                                baseModel
+                                    |> setSourceListSources RemoteData.Loading
+                                    |> setSourceListSpouts RemoteData.Loading
                         in
-                            ( setSourceListSources RemoteData.Loading baseModel, newCmds )
+                            ( newModel, newCmds )
 
                     NotFoundRoute ->
                         let
@@ -730,10 +736,10 @@ update action model =
                                 ( model, Cmd.map ForSourceList cmd )
 
                         _ ->
-                            (model, Cmd.none)
+                            ( model, Cmd.none )
 
                 _ ->
-                    (model, Cmd.none)
+                    ( model, Cmd.none )
 
         ForSourceList msg ->
             case model.page of
@@ -1270,6 +1276,10 @@ setSourceListSources : RemoteData.WebData (List SourceList.DisplaySourceData) ->
 setSourceListSources sources =
     mapSourceListSources (always sources)
 
+setSourceListSpouts : RemoteData.WebData (Dict String Spout) -> Model -> Model
+setSourceListSpouts spouts =
+    mapSourceListSpouts (always spouts)
+
 
 setSourceListModel : SourceList.Model -> Model -> Model
 setSourceListModel model =
@@ -1304,6 +1314,10 @@ mapItemListState f data =
 mapSources : Mapper SourceList.Model (RemoteData.WebData (List SourceList.DisplaySourceData))
 mapSources f data =
     { data | sources = f data.sources }
+
+mapSpouts : Mapper SourceList.Model (RemoteData.WebData (Dict String Spout))
+mapSpouts f data =
+    { data | spouts = f data.spouts }
 
 
 mapSourceListModel : Mapper Page SourceList.Model
@@ -1344,6 +1358,11 @@ mapItemListItems =
 mapSourceListSources : Mapper Model (RemoteData.WebData (List SourceList.DisplaySourceData))
 mapSourceListSources =
     mapPage << mapSourceListModel << mapSources
+
+
+mapSourceListSpouts : Mapper Model (RemoteData.WebData (Dict String Spout))
+mapSourceListSpouts =
+    mapPage << mapSourceListModel << mapSpouts
 
 
 mapItemListActiveItem : Mapper Model (Maybe Int)

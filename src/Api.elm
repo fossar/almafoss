@@ -265,16 +265,43 @@ spoutParamsDecoder =
         spoutParamDecoder =
             decode SpoutParam
                 |> required "title" Json.string
-                |> required "type" Json.string
+                |> required "type" spoutParamClassDecoder
                 |> required "default" Json.string
                 |> required "required" Json.bool
                 |> required "validation" validationDecoder
+                |> optional "values" (Json.dict Json.string |> Json.map Just) Nothing
     in
         Json.oneOf
             [ Json.dict spoutParamDecoder
             , expect (Json.list Json.value) [] Dict.empty
             , expect Json.bool False Dict.empty
             ]
+
+
+spoutParamClassDecoder : Json.Decoder SpoutParamClass
+spoutParamClassDecoder =
+    Json.string
+        |> Json.andThen
+            (\class ->
+                case class of
+                    "checkbox" ->
+                        Json.succeed SpoutParamCheckbox
+
+                    "password" ->
+                        Json.succeed SpoutParamPassword
+
+                    "select" ->
+                        Json.succeed SpoutParamSelect
+
+                    "text" ->
+                        Json.succeed SpoutParamText
+
+                    "url" ->
+                        Json.succeed SpoutParamUrl
+
+                    _ ->
+                        Json.fail ("Expected either \"checkbox\", \"password\", \"select\", \"text\", or \"url\" but instead got " ++ class)
+            )
 
 
 sourceDataEncoder : SourceData -> Json.Encode.Value

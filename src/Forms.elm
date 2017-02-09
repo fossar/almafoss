@@ -1,7 +1,7 @@
-module Forms exposing (form, lineEdit, comboBox, password, button)
+module Forms exposing (form, lineEdit, comboBox, password, url, button)
 
 {-|
-@docs form, lineEdit, comboBox, password, button
+@docs form, lineEdit, comboBox, password, url, button
 -}
 
 import Html exposing (Html, text)
@@ -73,6 +73,15 @@ password { identifier, label, value, action } =
         { identifier = identifier
         , label = label
         , control = InputWidget.lineEdit [ id identifier, type_ "password" ] value |> Html.map action
+        }
+
+{-| -}
+url : LineEditDef msg -> Html msg
+url { identifier, label, value, action } =
+    formGroup
+        { identifier = identifier
+        , label = label
+        , control = InputWidget.lineEdit [ id identifier, type_ "url" ] value |> Html.map action
         }
 
 

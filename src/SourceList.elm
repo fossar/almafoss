@@ -304,14 +304,14 @@ update action model =
 -}
 sourceList : String -> Model -> Language -> Html Msg
 sourceList host model lang =
-    case model.sources of
+    case RemoteData.append model.sources model.spouts of
         RemoteData.NotAsked ->
             Debug.crash "Trying to show source list and did not ask for data."
 
         RemoteData.Loading ->
             text <| translate lang Messages.Loading
 
-        RemoteData.Success sources ->
+        RemoteData.Success ( sources, spouts ) ->
             if List.isEmpty sources then
                 text <| translate lang Messages.NoSources
             else
@@ -354,7 +354,7 @@ sourceData host model lang sources =
                     spout.params
 
                 Nothing ->
-                    Debug.crash "Trying to get title of non-existent spout."
+                    Debug.crash "Trying to get params of non-existent spout."
 
         sourceFormEntryId entry =
             "source-" ++ sourceIdToString sourceId ++ "-form-" ++ entry
@@ -396,45 +396,88 @@ sourceData host model lang sources =
                  in
                     icon ++ title ++ info
                 )
-            , Forms.form (Save sourceId)
-                (let
-                    mainFields =
-                        [ Forms.lineEdit
-                            { identifier = (sourceFormEntryId "title")
-                            , label = translate lang Messages.SourceTitle
-                            , value = modified.title
-                            , action = UpdateSourceTitle sourceId
-                            }
-                        , Forms.lineEdit
-                            { identifier = sourceFormEntryId "tags"
-                            , label = translate lang Messages.SourceTags
-                            , value = String.join "," modified.tags
-                            , action = UpdateSourceTags sourceId
-                            }
-                        , Forms.comboBox
-                            { identifier = sourceFormEntryId "spout"
-                            , label = translate lang Messages.SourceSpout
-                            , printer = getSpoutTitle
-                            , values = Dict.keys spouts
-                            , value = modified.spout
-                            , action = UpdateSourceSpout sourceId
-                            }
-                        ]
+            , div [ class "source-content" ]
+                [ Forms.form (Save sourceId)
+                    (let
+                        mainFields =
+                            [ Forms.lineEdit
+                                { identifier = (sourceFormEntryId "title")
+                                , label = translate lang Messages.SourceTitle
+                                , value = modified.title
+                                , action = UpdateSourceTitle sourceId
+                                }
+                            , Forms.lineEdit
+                                { identifier = sourceFormEntryId "tags"
+                                , label = translate lang Messages.SourceTags
+                                , value = String.join "," modified.tags
+                                , action = UpdateSourceTags sourceId
+                                }
+                            , Forms.comboBox
+                                { identifier = sourceFormEntryId "spout"
+                                , label = translate lang Messages.SourceSpout
+                                , printer = getSpoutTitle
+                                , values = Dict.keys spouts
+                                , value = modified.spout
+                                , action = UpdateSourceSpout sourceId
+                                }
+                            ]
 
-                    paramFields =
-                        Dict.toList (getSpoutParams modified.spout)
-                            |> List.map
-                                (\( name, param ) ->
-                                    Forms.lineEdit
-                                        { identifier = sourceFormEntryId name
-                                        , label = param.title
-                                        , value = Maybe.withDefault param.default (Maybe.join (Dict.get name modified.params))
-                                        , action = UpdateSourceTags sourceId
-                                        }
-                                )
-                 in
-                    mainFields ++ paramFields
-                )
+                        paramFields =
+                            Dict.toList (getSpoutParams modified.spout)
+                                |> List.map
+                                    (\( name, param ) ->
+                                        let
+                                            paramValue =
+                                                Maybe.withDefault param.default (Maybe.join (Dict.get name modified.params))
+
+                                            simpleData () =
+                                                { identifier = sourceFormEntryId name
+                                                , label = param.title
+                                                , value = paramValue
+                                                , action = UpdateSourceTags sourceId
+                                                }
+
+                                            getComboItemLabel items id =
+                                                case Dict.get id items of
+                                                    Just value ->
+                                                        value
+
+                                                    Nothing ->
+                                                        Debug.crash "Trying to get label of a non-existent item."
+
+                                            comboData () =
+                                                let
+                                                    values =
+                                                        Maybe.withDefault Dict.empty param.values
+                                                in
+                                                    { identifier = sourceFormEntryId name
+                                                    , label = param.title
+                                                    , printer = getComboItemLabel values
+                                                    , value = paramValue
+                                                    , values = Dict.keys values
+                                                    , action = UpdateSourceTags sourceId
+                                                    }
+                                        in
+                                            case param.class of
+                                                SpoutParamCheckbox ->
+                                                    Forms.lineEdit (simpleData ())
+
+                                                SpoutParamPassword ->
+                                                    Forms.password (simpleData ())
+
+                                                SpoutParamSelect ->
+                                                    Forms.comboBox (comboData ())
+
+                                                SpoutParamText ->
+                                                    Forms.lineEdit (simpleData ())
+
+                                                SpoutParamUrl ->
+                                                    Forms.url (simpleData ())
+                                    )
+                     in
+                        mainFields ++ paramFields
+                    )
+                ]
             , sourceDataPanel model lang sourceId
             ]
 
