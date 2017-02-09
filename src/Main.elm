@@ -724,31 +724,14 @@ update action model =
                 _ ->
                     ( model, Cmd.none )
 
-        ForSourceList (SourceList.Save sourceId) ->
-            case model.page of
-                SourceList sourceListModel ->
-                    case sourceListModel.sources of
-                        RemoteData.Success sources ->
-                            let
-                                cmd =
-                                    SourceList.updateSourceData model.credentials model.host sourceListModel sourceId
-                            in
-                                ( model, Cmd.map ForSourceList cmd )
-
-                        _ ->
-                            ( model, Cmd.none )
-
-                _ ->
-                    ( model, Cmd.none )
-
         ForSourceList msg ->
             case model.page of
                 SourceList sourceListModel ->
                     let
-                        newModel =
-                            SourceList.update msg sourceListModel
+                        ( newModel, cmd ) =
+                            SourceList.update model.credentials model.host msg sourceListModel
                     in
-                        ( setSourceListModel newModel model, Cmd.none )
+                        ( setSourceListModel newModel model, Cmd.map ForSourceList cmd )
 
                 _ ->
                     ( model, Cmd.none )

@@ -17,6 +17,7 @@ Set-up
  ```apache
  Header set "Access-Control-Allow-Origin" "https://almafoss-host.example.org"
  Header set "Access-Control-Allow-Headers" "Content-Type"
+ Header set "Access-Control-Allow-Methods" "GET, POST, DELETE"
  ```
 
 Development

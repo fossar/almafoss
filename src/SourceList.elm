@@ -1,4 +1,4 @@
-module SourceList exposing (Model, Msg(..), DisplaySourceData, init, update, sourceList, fetchSourceData, fetchSpouts, updateSourceData)
+module SourceList exposing (Model, Msg(..), DisplaySourceData, init, update, sourceList, fetchSourceData, fetchSpouts)
 
 {-| This module takes care of user authentication.
 
@@ -9,7 +9,7 @@ module SourceList exposing (Model, Msg(..), DisplaySourceData, init, update, sou
 @docs init
 
 ## Update
-@docs update, fetchSourceData, fetchSpouts, updateSourceData
+@docs update, fetchSourceData, fetchSpouts
 
 ## View
 @docs sourceList
@@ -30,8 +30,10 @@ import Markdown
 import Maybe.Extra as Maybe
 import Messages
 import RemoteData exposing (RemoteData(..), WebData)
-import Types exposing (..)
+import Rocket exposing ((=>))
+import Task
 import Time.DateTime exposing (toISO8601)
+import Types exposing (..)
 
 
 {-| Model of the authentication module.
@@ -53,6 +55,7 @@ type alias DisplaySourceData =
     , source : SourceData
     , open : Bool
     , modified : SourceData
+    , deleting : Bool
     }
 
 
@@ -92,6 +95,8 @@ type Msg
     = AddSource
     | Save SourceDataId
     | Edit SourceDataId
+    | ToggleDeletion SourceDataId
+    | Delete SourceDataId
     | Cancel SourceDataId
     | UpdateSourceTitle SourceDataId String
     | UpdateSourceTags SourceDataId String
@@ -100,6 +105,7 @@ type Msg
     | SourceDataResponse (Result Http.Error (List SourceData))
     | SpoutsResponse (Result Http.Error (Dict String Spout))
     | SourceDataUpdateResponse SourceDataId (Result Http.Error Int)
+    | SourceDataDeleteResponse SourceDataId (Result Http.Error Bool)
     | NoOp
 
 
@@ -118,8 +124,8 @@ init =
 
 {-| Update module state based on an action.
 -}
-update : Msg -> Model -> Model
-update action model =
+update : Maybe Credentials -> String -> Msg -> Model -> ( Model, Cmd Msg )
+update credentials host action model =
     case action of
         AddSource ->
             case model.sources of
@@ -141,15 +147,16 @@ update action model =
                             , source = newSourceData
                             , open = True
                             , modified = newSourceData
+                            , deleting = False
                             }
 
                         newData =
                             newDisplaySourceData :: sources
                     in
-                        { model | sources = RemoteData.Success newData }
+                        { model | sources = RemoteData.Success newData } => Cmd.none
 
                 _ ->
-                    model
+                    model => Cmd.none
 
         UpdateSourceTitle sourceId title ->
             case model.sources of
@@ -168,10 +175,10 @@ update action model =
                         newData =
                             List.updateIf (\source -> source.id == sourceId) upd sources
                     in
-                        { model | sources = RemoteData.Success newData }
+                        { model | sources = RemoteData.Success newData } => Cmd.none
 
                 _ ->
-                    model
+                    model => Cmd.none
 
         UpdateSourceTags sourceId tags ->
             case model.sources of
@@ -190,10 +197,10 @@ update action model =
                         newData =
                             List.updateIf (\source -> source.id == sourceId) upd sources
                     in
-                        { model | sources = RemoteData.Success newData }
+                        { model | sources = RemoteData.Success newData } => Cmd.none
 
                 _ ->
-                    model
+                    model => Cmd.none
 
         UpdateSourceSpout sourceId spout ->
             case model.sources of
@@ -212,10 +219,10 @@ update action model =
                         newData =
                             List.updateIf (\source -> source.id == sourceId) upd sources
                     in
-                        { model | sources = RemoteData.Success newData }
+                        { model | sources = RemoteData.Success newData } => Cmd.none
 
                 _ ->
-                    model
+                    model => Cmd.none
 
         UpdateSourceParam sourceId name value ->
             (mapSources << RemoteData.map)
@@ -224,6 +231,7 @@ update action model =
                     ((mapModified << mapParams) (Dict.insert name (Just value)))
                 )
                 model
+                => Cmd.none
 
         Edit sourceId ->
             case model.sources of
@@ -235,13 +243,43 @@ update action model =
                         newData =
                             List.updateIf (\source -> source.id == sourceId) upd sources
                     in
-                        { model | sources = RemoteData.Success newData }
+                        { model | sources = RemoteData.Success newData } => Cmd.none
 
                 _ ->
-                    model
+                    model => Cmd.none
 
-        Save _ ->
-            Debug.crash "Handled upstream"
+        ToggleDeletion sourceId ->
+            (mapSources << RemoteData.map)
+                (List.updateIf
+                    (\source -> source.id == sourceId)
+                    (\data -> { data | deleting = not data.deleting })
+                )
+                model
+                => Cmd.none
+
+        Save sourceId ->
+            case model.sources of
+                RemoteData.Success sources ->
+                    let
+                        cmd =
+                            updateSourceData credentials host model sourceId
+                    in
+                        ( model, cmd )
+
+                _ ->
+                    ( model, Cmd.none )
+
+        Delete sourceId ->
+            case model.sources of
+                RemoteData.Success sources ->
+                    let
+                        cmd =
+                            deleteSourceData credentials host model sourceId
+                    in
+                        ( model, cmd )
+
+                _ ->
+                    ( model, Cmd.none )
 
         Cancel sourceId ->
             case model.sources of
@@ -253,10 +291,10 @@ update action model =
                         newData =
                             List.updateIf (\source -> source.id == sourceId) upd sources
                     in
-                        { model | sources = RemoteData.Success newData }
+                        { model | sources = RemoteData.Success newData } => Cmd.none
 
                 _ ->
-                    model
+                    model => Cmd.none
 
         SourceDataUpdateResponse originalId respondedId ->
             case model.sources of
@@ -277,36 +315,53 @@ update action model =
                                 newData =
                                     List.updateIf (\source -> source.id == originalId) upd sources
                             in
-                                { model | sources = RemoteData.Success newData }
+                                { model | sources = RemoteData.Success newData } => Cmd.none
 
                         Err err ->
-                            { model | sources = RemoteData.Failure err }
+                            { model | sources = RemoteData.Failure err } => Cmd.none
 
                 _ ->
-                    model
+                    model => Cmd.none
+
+        SourceDataDeleteResponse originalId response ->
+            case model.sources of
+                RemoteData.Success sources ->
+                    case response of
+                        Ok _ ->
+                            let
+                                newData =
+                                    List.filter (\source -> source.id /= originalId) sources
+                            in
+                                { model | sources = RemoteData.Success newData } => Cmd.none
+
+                        Err err ->
+                            { model | sources = RemoteData.Failure err } => Cmd.none
+
+                _ ->
+                    model => Cmd.none
 
         SourceDataResponse response ->
             case response of
                 Ok sources ->
                     let
                         sourceFmt src =
-                            DisplaySourceData (Saved src.id) src False src
+                            DisplaySourceData (Saved src.id) src False src False
                     in
-                        { model | sources = RemoteData.Success (List.map sourceFmt sources) }
+                        { model | sources = RemoteData.Success (List.map sourceFmt sources) } => Cmd.none
 
                 Err err ->
-                    { model | sources = RemoteData.Failure err }
+                    { model | sources = RemoteData.Failure err } => Cmd.none
 
         SpoutsResponse response ->
             case response of
                 Ok spouts ->
-                    { model | spouts = RemoteData.Success spouts }
+                    { model | spouts = RemoteData.Success spouts } => Cmd.none
 
                 Err err ->
-                    { model | spouts = RemoteData.Failure err }
+                    { model | spouts = RemoteData.Failure err } => Cmd.none
 
         NoOp ->
-            model
+            model => Cmd.none
 
 
 {-| Component listing sources and allowing their management.
@@ -340,7 +395,7 @@ sourceList host model lang =
 sourceData : String -> Model -> Language -> DisplaySourceData -> Html Msg
 sourceData host model lang sources =
     let
-        { source, open, modified } =
+        { source, open, modified, deleting } =
             sources
 
         sourceId =
@@ -388,9 +443,15 @@ sourceData host model lang sources =
                         ]
 
                     deleteButton =
-                        [ button [{- onClick (ToggleItemStarred source) -}]
-                            [ text <| translate lang Messages.DeleteSource ]
-                        ]
+                        if deleting then
+                            [ text <| translate lang Messages.ReallyDeleteSource
+                            , button [ onClick (Delete sourceId) ] [ text <| translate lang Messages.YesDeleteSource ]
+                            , button [ onClick (ToggleDeletion sourceId) ] [ text <| translate lang Messages.NoDeleteSource ]
+                            ]
+                        else
+                            [ button [ onClick (ToggleDeletion sourceId) ]
+                                [ text <| translate lang Messages.DeleteSource ]
+                            ]
 
                     lastUpdated =
                         case source.lastentry of
@@ -453,7 +514,6 @@ sourceData host model lang sources =
 
                                                     Nothing ->
                                                         Debug.crash "Trying to get label of a non-existent item."
-
                                         in
                                             case param.class of
                                                 SpoutParamCheckbox ->
@@ -565,6 +625,38 @@ updateSourceData credentials host model originalId =
                             (SourceDataUpdateResponse originalId)
                 )
             |> RemoteData.withDefault Cmd.none
+
+
+{-| -}
+deleteSourceData : Maybe Credentials -> String -> Model -> SourceDataId -> Cmd Msg
+deleteSourceData credentials host model originalId =
+    let
+        requestModel =
+            { credentials = credentials, host = host }
+    in
+        case originalId of
+            Temporary id ->
+                Task.perform identity (Task.succeed (SourceDataDeleteResponse originalId (Ok True)))
+
+            Saved id ->
+                model.sources
+                    |> RemoteData.map
+                        (\sources ->
+                            let
+                                source =
+                                    case List.find (\source -> source.id == originalId) sources of
+                                        Just source ->
+                                            source
+
+                                        Nothing ->
+                                            Debug.crash "Trying to delete non-existent source."
+                            in
+                                Api.deleteSource
+                                    requestModel
+                                    id
+                                    (SourceDataDeleteResponse originalId)
+                        )
+                    |> RemoteData.withDefault Cmd.none
 
 
 

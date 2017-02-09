@@ -138,6 +138,12 @@ translator str =
         ReallyDeleteSource ->
             t "Opravdu si přejete smazat zdroj?"
 
+        YesDeleteSource ->
+            t "Ano, smazat"
+
+        NoDeleteSource ->
+            t "Ne, nechat"
+
         SourceTitle ->
             t "Název"
 

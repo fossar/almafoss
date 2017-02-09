@@ -46,6 +46,8 @@ type Message
     | CancelSourceEditing
     | DeleteSource
     | ReallyDeleteSource
+    | YesDeleteSource
+    | NoDeleteSource
     | SourceTitle
     | SourceTags
     | SourceFilter

@@ -135,6 +135,12 @@ translator str =
         ReallyDeleteSource ->
             t "Do you really wish to delete the source?"
 
+        YesDeleteSource ->
+            t "Yes, delete"
+
+        NoDeleteSource ->
+            t "No, keep it"
+
         SourceTitle ->
             t "Title"
 
