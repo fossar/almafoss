@@ -101,4 +101,3 @@ link route =
 
         NotFoundRoute ->
             "#404"
-

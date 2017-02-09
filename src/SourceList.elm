@@ -439,7 +439,7 @@ sourceData host model lang sources =
                                             paramValue =
                                                 Maybe.withDefault param.default (Maybe.join (Dict.get name modified.params))
 
-                                            simpleData () =
+                                            simpleData =
                                                 { identifier = sourceFormEntryId name
                                                 , label = param.title
                                                 , value = paramValue
@@ -454,34 +454,33 @@ sourceData host model lang sources =
                                                     Nothing ->
                                                         Debug.crash "Trying to get label of a non-existent item."
 
-                                            comboData () =
-                                                let
-                                                    values =
-                                                        Maybe.withDefault Dict.empty param.values
-                                                in
-                                                    { identifier = sourceFormEntryId name
-                                                    , label = param.title
-                                                    , printer = getComboItemLabel values
-                                                    , value = paramValue
-                                                    , values = Dict.keys values
-                                                    , action = UpdateSourceParam sourceId name
-                                                    }
                                         in
                                             case param.class of
                                                 SpoutParamCheckbox ->
-                                                    Forms.lineEdit (simpleData ())
+                                                    Forms.lineEdit simpleData
 
                                                 SpoutParamPassword ->
-                                                    Forms.password (simpleData ())
+                                                    Forms.password simpleData
 
                                                 SpoutParamSelect ->
-                                                    Forms.comboBox (comboData ())
+                                                    let
+                                                        values =
+                                                            Maybe.withDefault Dict.empty param.values
+                                                    in
+                                                        Forms.comboBox
+                                                            { identifier = sourceFormEntryId name
+                                                            , label = param.title
+                                                            , printer = getComboItemLabel values
+                                                            , value = paramValue
+                                                            , values = Dict.keys values
+                                                            , action = UpdateSourceParam sourceId name
+                                                            }
 
                                                 SpoutParamText ->
-                                                    Forms.lineEdit (simpleData ())
+                                                    Forms.lineEdit simpleData
 
                                                 SpoutParamUrl ->
-                                                    Forms.url (simpleData ())
+                                                    Forms.url simpleData
                                     )
                      in
                         mainFields ++ paramFields
