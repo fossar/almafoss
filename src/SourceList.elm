@@ -96,6 +96,7 @@ type Msg
     | UpdateSourceTitle SourceDataId String
     | UpdateSourceTags SourceDataId String
     | UpdateSourceSpout SourceDataId String
+    | UpdateSourceParam SourceDataId String String
     | SourceDataResponse (Result Http.Error (List SourceData))
     | SpoutsResponse (Result Http.Error (Dict String Spout))
     | SourceDataUpdateResponse SourceDataId (Result Http.Error Int)
@@ -215,6 +216,14 @@ update action model =
 
                 _ ->
                     model
+
+        UpdateSourceParam sourceId name value ->
+            (mapSources << RemoteData.map)
+                (List.updateIf
+                    (\source -> source.id == sourceId)
+                    ((mapModified << mapParams) (Dict.insert name (Just value)))
+                )
+                model
 
         Edit sourceId ->
             case model.sources of
@@ -434,7 +443,7 @@ sourceData host model lang sources =
                                                 { identifier = sourceFormEntryId name
                                                 , label = param.title
                                                 , value = paramValue
-                                                , action = UpdateSourceTags sourceId
+                                                , action = UpdateSourceParam sourceId name
                                                 }
 
                                             getComboItemLabel items id =
@@ -455,7 +464,7 @@ sourceData host model lang sources =
                                                     , printer = getComboItemLabel values
                                                     , value = paramValue
                                                     , values = Dict.keys values
-                                                    , action = UpdateSourceTags sourceId
+                                                    , action = UpdateSourceParam sourceId name
                                                     }
                                         in
                                             case param.class of
@@ -557,3 +566,22 @@ updateSourceData credentials host model originalId =
                             (SourceDataUpdateResponse originalId)
                 )
             |> RemoteData.withDefault Cmd.none
+
+
+
+-- SETTERS
+
+
+mapModified : Mapper DisplaySourceData SourceData
+mapModified f display =
+    { display | modified = f display.modified }
+
+
+mapParams : Mapper SourceData (Dict String (Maybe String))
+mapParams f data =
+    { data | params = f data.params }
+
+
+mapSources : Mapper Model (WebData (List DisplaySourceData))
+mapSources f model =
+    { model | sources = f model.sources }
