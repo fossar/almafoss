@@ -94,7 +94,7 @@ type alias Item =
     , url : String
     , content : String
     , author : Maybe String
-    , datetime : String
+    , datetime : DateTime
     , tags : List String
     , unread : Bool
     , starred : Bool

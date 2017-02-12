@@ -16,6 +16,7 @@ import Json.Decode.Pipeline exposing (custom, decode, hardcoded, required, optio
 import Json.Encode
 import Time.DateTime exposing (DateTime, fromTimestamp)
 import Types exposing (..)
+import Utils
 
 
 {-| Request items.
@@ -235,7 +236,7 @@ sourceDataDecoder =
                 |> required "spout" Json.string
                 |> required "params" spoutParamsDecoder
                 |> required "error" maybeString
-                |> required "lastentry" (Json.maybe datetime)
+                |> required "lastentry" (Json.maybe unixDatetime)
                 |> required "icon" (Json.maybe Json.string)
     in
         Json.list sourceDecoder
@@ -354,7 +355,7 @@ itemsDecoder =
                 |> required "link" Json.string
                 |> required "content" Json.string
                 |> required "author" (Json.map Just Json.string)
-                |> required "datetime" Json.string
+                |> required "datetime" sqlDatetime
                 |> required "tags" tagListDecoder
                 |> required "unread" fakeBool
                 |> required "starred" fakeBool
@@ -483,6 +484,15 @@ resultToJson r =
 
 {-| Decode string containing UNIX timestamp to a `DateTime`.
 -}
-datetime : Json.Decoder DateTime
-datetime =
+unixDatetime : Json.Decoder DateTime
+unixDatetime =
     Json.map fromTimestamp floatString
+
+
+{-| Decode string containing datetime to a `DateTime`.
+-}
+sqlDatetime : Json.Decoder DateTime
+sqlDatetime =
+    Json.string
+        |> Json.map Utils.fromSqlDateTime
+        |> Json.andThen resultToJson

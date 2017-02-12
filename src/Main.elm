@@ -32,6 +32,7 @@ import Routing
 import Scroll
 import SourceList
 import Task
+import Time.DateTime exposing (toISO8601)
 import Types exposing (..)
 import Utils exposing (onEnter)
 import Window
@@ -1128,7 +1129,7 @@ entry model activeId { item, open } =
 
                     info =
                         List.intersperse (text " · ")
-                            ([ source ] ++ author ++ [ a [ href item.url ] [ text item.datetime ] ])
+                            ([ source ] ++ author ++ [ a [ href item.url ] [ text <| toISO8601 item.datetime ] ])
                  in
                     icon ++ title ++ tags ++ info
                 )
