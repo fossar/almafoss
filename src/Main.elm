@@ -17,6 +17,7 @@ import Html.Accessibility.Role as Role exposing (role)
 import Html.Accessibility exposing (Tristate(..), ariaChecked, ariaExpanded, ariaLabel, ariaLabelledby, boolToTristate)
 import Html.Attributes exposing (alt, class, classList, href, id, src, width, height, tabindex)
 import Html.Events exposing (keyCode, onClick)
+import Html.Events.Scroll exposing (onScrollToBottom)
 import Http
 import Keyboard.Combo as Kbd
 import Kintail.InputWidget as InputWidget
@@ -28,6 +29,7 @@ import Maybe.Extra as Maybe
 import Messages
 import Navigation exposing (Location)
 import RemoteData
+import Rocket exposing ((=>))
 import Routing
 import Scroll
 import SourceList
@@ -156,6 +158,7 @@ type Msg
     | ItemMarkedStarred Bool Item
     | MarkingItemReadFailed Bool Item
     | MarkingItemStarredFailed Bool Item
+    | LoadMore
     | SelectSource Int
     | SelectTag String
     | SelectAllTags
@@ -626,6 +629,25 @@ update action model =
                     { item | unread = val }
             in
                 ( updateItem item.id upd model, Cmd.none )
+
+        LoadMore ->
+            case model.page of
+                ItemList listData ->
+                    case listData.items of
+                        RemoteData.Success items ->
+                            let
+                                nextItems =
+                                    findPrevious (List.map .item items) listData.activeItem
+                            in
+                                model
+                                    |> setItemListItems RemoteData.Loading
+                                    => Cmd.none
+
+                        _ ->
+                            ( model, Cmd.none )
+
+                _ ->
+                    ( model, Cmd.none )
 
         SelectTag tagName ->
             let
@@ -1187,10 +1209,22 @@ entryPanel model item =
 
 view : Model -> Html Msg
 view model =
-    div [ class "almafoss", Html.Attributes.lang (Localization.Language.code model.lang) ]
-        [ sidebar model
-        , Html.main_ [] [ mainContent model ]
-        ]
+    let
+        evts =
+            case model.page of
+                ItemList listData ->
+                    if RemoteData.isSuccess listData.items then
+                        [ onScrollToBottom LoadMore ]
+                    else
+                        []
+
+                _ ->
+                    []
+    in
+        div [ class "almafoss", Html.Attributes.lang (Localization.Language.code model.lang) ]
+            [ sidebar model
+            , Html.main_ evts [ mainContent model ]
+            ]
 
 
 mainContent : Model -> Html Msg
@@ -1388,6 +1422,7 @@ fetchItems model =
         Api.items
             model
             filter
+            Nothing
             ItemsResponse
 
 

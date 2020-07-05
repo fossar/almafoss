@@ -39,6 +39,8 @@
         "evancz/url-parser": "2.0.1 <= v < 3.0.0",
         "fossar/elm-accessibility": "0.0.1 <= v < 0.0.2",
         "fossar/elm-localization": "0.0.1 <= v < 0.0.2",
+        "fossar/elm-scroll-events": "1.0.0 <= v < 2.0.0",
+        "fossar/elm-datetime-format": "0.0.1 <= v < 0.0.2",
         "Fresheyeball/elm-font-awesome": "2.0.2 <= v < 3.0.0",
         "kintail/input-widget": "1.0.6 <= v < 2.0.0",
         "krisajenkins/remotedata": "4.3.0 <= v < 5.0.0",

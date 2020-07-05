@@ -14,19 +14,30 @@ import Json.Decode as Json
 import Json.Decode as Json exposing (field)
 import Json.Decode.Pipeline exposing (custom, decode, hardcoded, required, optional)
 import Json.Encode
+import Rocket exposing ((=>))
 import Time.DateTime exposing (DateTime, fromTimestamp)
+import Time.DateTime.Format exposing (sqlDateTime)
 import Types exposing (..)
 import Utils
 
 
 {-| Request items.
 -}
-items : { model | credentials : Maybe Credentials, host : String } -> Filter -> (Result Http.Error (List Item) -> msg) -> Cmd msg
-items { credentials, host } filter handler =
-    HttpBuilder.get (host ++ "/items")
-        |> withQueryParams (makeAuth credentials ++ filterToParams filter)
-        |> withExpect (Http.expectJson itemsDecoder)
-        |> send handler
+items : { model | credentials : Maybe Credentials, host : String } -> Filter -> Maybe Seek -> (Result Http.Error (List Item) -> msg) -> Cmd msg
+items { credentials, host } filter seek handler =
+    let
+        seekParams =
+            case seek of
+                Nothing ->
+                    []
+
+                Just { id, datetime } ->
+                    [ "offset_from_datetime" => sqlDateTime datetime, "offset_from_id" => toString id ]
+    in
+        HttpBuilder.get (host ++ "/items")
+            |> withQueryParams (makeAuth credentials ++ filterToParams filter ++ seekParams)
+            |> withExpect (Http.expectJson itemsDecoder)
+            |> send handler
 
 
 {-| Request sources to be used in the sidebar.

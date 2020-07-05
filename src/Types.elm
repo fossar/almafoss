@@ -7,6 +7,7 @@ module Types
         , FilterSecondary(..)
         , Filter
         , defaultFilter
+        , Seek
         , Item
         , DisplayItem
         , Tag
@@ -25,7 +26,7 @@ module Types
 @docs UserName, Password, Credentials
 
 ## Filters
-@docs FilterPrimary, FilterSecondary, Filter, defaultFilter
+@docs FilterPrimary, FilterSecondary, Filter, defaultFilter, Seek
 
 ## Feed data
 @docs Item, DisplayItem, Tag, Source, SourceData, Spout, SpoutParam, SpoutParamClass, Stats
@@ -84,6 +85,14 @@ defaultFilter : Filter
 defaultFilter =
     { primary = AllItems
     , secondary = AllTags
+    }
+
+
+{-| Offset for pagination
+-}
+type alias Seek =
+    { id : Int
+    , datetime : DateTime
     }
 
 
