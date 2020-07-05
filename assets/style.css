@@ -253,3 +253,7 @@ main {
 :focus {
 	/*border: 5px solid crimson;*/
 }
+
+.message-container:empty {
+	display: none;
+}

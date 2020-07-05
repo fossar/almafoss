@@ -7,6 +7,7 @@ module Main exposing (main)
 
 import AuthForm
 import Api
+import Basics exposing ((|>))
 import Dict exposing (Dict)
 import Dom
 import Document
@@ -65,6 +66,7 @@ type alias ItemListState =
     { activeItem : Maybe Int
     , filter : Filter
     , items : RemoteData.WebData (List DisplayItem)
+    , moreAvailable : RemoteData.WebData Bool
     }
 
 
@@ -1526,7 +1528,7 @@ toPage : Routing.Route -> Page
 toPage route =
     case route of
         Routing.ItemList filter ->
-            ItemList (ItemListState Nothing filter RemoteData.NotAsked)
+            ItemList (ItemListState Nothing filter RemoteData.NotAsked RemoteData.NotAsked)
 
         Routing.SourceList ->
             SourceList SourceList.init

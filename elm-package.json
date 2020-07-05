@@ -45,6 +45,7 @@
         "kintail/input-widget": "1.0.6 <= v < 2.0.0",
         "krisajenkins/remotedata": "4.3.0 <= v < 5.0.0",
         "lukewestby/elm-http-builder": "5.0.0 <= v < 6.0.0",
+        "mpizenberg/elm-debounce": "3.0.1 <= v < 4.0.0",
         "NoRedInk/elm-decode-pipeline": "3.0.0 <= v < 4.0.0",
         "NoRedInk/rocket-update": "1.0.0 <= v < 2.0.0",
         "ohanhi/keyboard-extra": "1.2.0 <= v < 2.0.0",

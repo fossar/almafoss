@@ -39,6 +39,14 @@ import Dict exposing (Dict)
 import Time.DateTime exposing (DateTime)
 
 
+{-| User can either be authenticated, unauthenicated or there does not have to be any authentication at all.
+-}
+type Authentication
+    = Unneeded
+    | Unspecified
+    | SignedIn Credentials
+
+
 {-| User name
 -}
 type alias UserName =

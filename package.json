@@ -1,0 +1,14 @@
+{
+  "name": "almafoss",
+  "version": "0.0.1",
+  "description": "Alternative front end for selfoss RSS reader",
+  "main": "index.js",
+  "repository": "git@github.com:jtojnar/almafoss.git",
+  "author": "Jan Tojnar <jtojnar@gmail.com>",
+  "license": "MIT",
+  "devDependencies": {
+    "closure-compiler": "^0.2.12",
+    "elm": "^0.18.0",
+    "elm-live": "^2.6.1"
+  }
+}
